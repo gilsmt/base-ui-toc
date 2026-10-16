@@ -140,15 +140,20 @@ export interface TocGeometrySample {
   hasSurfaceBottomReached: boolean;
 }
 
-// State types stay `type` aliases: `useRenderElement` constrains `State` to
-// `Record<string, any>`, which rejects interfaces (prior empirical check TS2344).
-export type TocRootState = { currentId: string | null };
+// Part states are interfaces because `useRenderElement`'s `State extends
+// Record<string, any>` accepts them; the empty structural states are empty
+// interfaces, in the same idiom Base UI's own part states use.
+export interface TocRootState {
+  currentId: string | null;
+}
 
-export type TocLinkState = { current: boolean };
+export interface TocLinkState {
+  current: boolean;
+}
 
-export type TocListState = Record<string, never>;
+export interface TocListState {}
 
-export type TocItemState = Record<string, never>;
+export interface TocItemState {}
 
 export interface TocActions {
   refresh(): void;
