@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useRender } from "@base-ui/react/use-render";
+import { useRenderElement } from "@base-ui/react/internals/useRenderElement";
 import type { ComponentRenderFn, HTMLProps } from "@base-ui/react/use-render";
-import { mergePropsN } from "@base-ui/react/merge-props";
 import { addEventListener } from "@base-ui/utils/addEventListener";
+import { useAnimationFrame } from "@base-ui/utils/useAnimationFrame";
 import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
+import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
 /**
@@ -91,43 +92,6 @@ const INVALID_OUTLINE_TITLE_MESSAGE = "Invalid heading title in buildOutline inp
 
 const DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX = "Duplicate heading ID in buildOutline input: ";
 
-export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
-
-export interface Heading {
-  id: string;
-  title: string;
-  level: HeadingLevel;
-}
-
-export type HeadingGroup = Heading & { children: readonly HeadingGroup[] };
-
-// The same node shape with mutable children, used while the outline builds;
-// the returned trees still satisfy HeadingGroup.
-type HeadingGroupDraft = Heading & { children: HeadingGroupDraft[] };
-
-// Grid of one measurement: injected into the pure selection step so the
-// crossing rule stays testable without a DOM (§16.1).
-export type TocTargetGeometry = {
-  id: string;
-  /** Pixels from the surface top edge down to the target's top edge; `null` when the target is unavailable (§4.6, §6). */
-  headroomPx: number | null;
-};
-
-export type TocGeometrySample = {
-  targets: readonly TocTargetGeometry[];
-  activationOffsetPx: number;
-  hasSurfaceBottomReached: boolean;
-};
-
-// State types are `type` aliases: `useRender` rejects interfaces here.
-export type TocRootState = { currentId: string | null };
-
-export type TocLinkState = { current: boolean };
-
-export type TocListState = Record<string, never>;
-
-export type TocItemState = Record<string, never>;
-
 const TOC_ROOT_SLOT = "toc-root";
 const TOC_LIST_SLOT = "toc-list";
 const TOC_ITEM_SLOT = "toc-item";
@@ -136,8 +100,65 @@ const TOC_LINK_SLOT = "toc-link";
 // TocList and TocItem share one empty state; it carries no attributes.
 const EMPTY_TOC_STATE: TocListState = {};
 
+// Definition order: module doc, then constants, then types. Shared pure
+// helpers sit above their first consumer, a helper with one consumer sits
+// directly below it, and each part's props sit directly above the part.
+
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface Heading {
+  id: string;
+  title: string;
+  level: HeadingLevel;
+}
+
+export interface HeadingGroup extends Heading {
+  children: readonly HeadingGroup[];
+}
+
+// The same node shape with mutable children, used while the outline builds;
+// the returned trees still satisfy HeadingGroup.
+interface HeadingGroupDraft extends Heading {
+  children: HeadingGroupDraft[];
+}
+
+// A parsed outline entry: title cleaning has already run, so grouping reads
+// nothing further (§9.2).
+type CleanedHeading = Heading;
+
+// Grid of one measurement: injected into the pure selection step so the
+// crossing rule stays testable without a DOM (§16.1).
+export interface TocTargetGeometry {
+  id: string;
+  /** Pixels from the surface top edge down to the target's top edge; `null` when the target is unavailable (§4.6, §6). */
+  headroomPx: number | null;
+}
+
+export interface TocGeometrySample {
+  targets: readonly TocTargetGeometry[];
+  activationOffsetPx: number;
+  hasSurfaceBottomReached: boolean;
+}
+
+// State types stay `type` aliases: `useRenderElement` constrains `State` to
+// `Record<string, any>`, which rejects interfaces (prior empirical check TS2344).
+export type TocRootState = { currentId: string | null };
+
+export type TocLinkState = { current: boolean };
+
+export type TocListState = Record<string, never>;
+
+export type TocItemState = Record<string, never>;
+
 export interface TocActions {
   refresh(): void;
+}
+
+interface TocRootContextValue {
+  /** Ordered destination IDs of the owning Root (§4.1); identity is the committed prop value. */
+  targetIds: readonly string[];
+  /** The current location this Root tracks; `null` before the first crossing (§6). */
+  currentId: string | null;
 }
 
 /** A valid target ID is non-empty, holds no ASCII whitespace, and holds no unpaired surrogate (§4.2). */
@@ -148,19 +169,32 @@ export function isValidTargetId(candidate: unknown): candidate is string {
   return !UNPAIRED_SURROGATE_PATTERN.test(candidate);
 }
 
-/** Collection boundary: every entry must be a valid target ID and unique (§4.3). */
-export function validateTargetCollection(targetIds: readonly unknown[]): void {
+/**
+ * Collection boundary: every entry must be a valid target ID and unique (§4.3).
+ * Returns a fresh array: the parser owns the copy, so callers keep reading
+ * their own prop value (§4.1).
+ */
+export function parseTargetCollection(targetIds: readonly unknown[]): readonly string[] {
+  const parsedIds: string[] = [];
   const seenIds = new Set<string>();
   for (const candidate of targetIds) {
     if (!isValidTargetId(candidate)) throw new Error(INVALID_COLLECTION_MESSAGE);
     if (seenIds.has(candidate)) throw new Error(DUPLICATE_TARGET_MESSAGE_PREFIX + candidate);
     seenIds.add(candidate);
+    parsedIds.push(candidate);
   }
+  return parsedIds;
 }
 
 /** The activation line offset is a non-negative, finite CSS-pixel number (§6). */
-export function isValidActivationOffset(candidate: unknown): boolean {
+export function isValidActivationOffset(candidate: unknown): candidate is number {
   return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0;
+}
+
+/** Offset boundary (§6): parse a non-negative, finite CSS-pixel number or throw (§10). */
+export function parseActivationOffset(candidate: unknown): number {
+  if (!isValidActivationOffset(candidate)) throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
+  return candidate;
 }
 
 /**
@@ -197,21 +231,6 @@ function isHeadingLevelValue(candidate: unknown): candidate is HeadingLevel {
   );
 }
 
-/** Outline boundary: validate consumer-supplied entries once (§9.2); discovery output already satisfies this. */
-function validateOutlineHeadings(headings: readonly Heading[]): void {
-  const seenIds = new Set<string>();
-  for (const entry of headings) {
-    if (!isValidTargetId(entry.id)) throw new Error(INVALID_OUTLINE_ID_MESSAGE_PREFIX + String(entry.id));
-    if (!isHeadingLevelValue(entry.level)) throw new Error(INVALID_OUTLINE_LEVEL_MESSAGE);
-    // A JS caller can supply junk inside typed fields; reject a non-string
-    // title explicitly before cleaning runs, so no TypeError escapes (§9.2).
-    if (typeof entry.title !== "string") throw new Error(INVALID_OUTLINE_TITLE_MESSAGE);
-    cleanHeadingTitle(entry.title);
-    if (seenIds.has(entry.id)) throw new Error(DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX + entry.id);
-    seenIds.add(entry.id);
-  }
-}
-
 /**
  * Pure outline builder (§9.2). An entry at level L groups the following
  * deeper entries until an entry with level ≤ L appears. Skipped levels nest
@@ -219,11 +238,11 @@ function validateOutlineHeadings(headings: readonly Heading[]): void {
  * new top-level group; earlier branches are never re-parented.
  */
 export function buildOutline(headings: readonly Heading[]): readonly HeadingGroup[] {
-  validateOutlineHeadings(headings);
+  const cleanedHeadings = parseOutlineHeadings(headings);
 
   const topGroups: HeadingGroupDraft[] = [];
   const openGroups: HeadingGroupDraft[] = [];
-  for (const entry of headings) {
+  for (const entry of cleanedHeadings) {
     const group: HeadingGroupDraft = { id: entry.id, title: entry.title, level: entry.level, children: [] };
     // The nearest preceding group shallower than this entry becomes its parent.
     while (openGroups.length > 0) {
@@ -236,6 +255,28 @@ export function buildOutline(headings: readonly Heading[]): readonly HeadingGrou
     openGroups.push(group);
   }
   return topGroups;
+}
+
+/**
+ * Outline boundary: parse consumer-supplied entries once (§9.2); discovery
+ * output already satisfies it. Returns the entries in input order with
+ * cleaned titles, so grouping above never re-cleans or re-validates.
+ */
+function parseOutlineHeadings(headings: readonly Heading[]): readonly CleanedHeading[] {
+  const cleanedHeadings: CleanedHeading[] = [];
+  const seenIds = new Set<string>();
+  for (const entry of headings) {
+    if (!isValidTargetId(entry.id)) throw new Error(INVALID_OUTLINE_ID_MESSAGE_PREFIX + String(entry.id));
+    if (!isHeadingLevelValue(entry.level)) throw new Error(INVALID_OUTLINE_LEVEL_MESSAGE);
+    // A JS caller can supply junk inside typed fields; reject a non-string
+    // title explicitly before cleaning runs, so no TypeError escapes (§9.2).
+    if (typeof entry.title !== "string") throw new Error(INVALID_OUTLINE_TITLE_MESSAGE);
+    const cleanedTitle = cleanHeadingTitle(entry.title);
+    if (seenIds.has(entry.id)) throw new Error(DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX + entry.id);
+    cleanedHeadings.push({ id: entry.id, title: cleanedTitle, level: entry.level });
+    seenIds.add(entry.id);
+  }
+  return cleanedHeadings;
 }
 
 /** Document-order heading snapshot with cleaned titles and no layout reads (§9.1). */
@@ -299,13 +340,6 @@ function collectTitleText(element: Element, fragments: string[]): void {
 
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(undefined);
 
-type TocRootContextValue = {
-  /** Ordered destination IDs of the owning Root (§4.1); identity is the committed prop value. */
-  targetIds: readonly string[];
-  /** The current location this Root tracks; `null` before the first crossing (§6). */
-  currentId: string | null;
-};
-
 /**
  * Root-owned tracker: resolves targets, measures one geometry sample per
  * scheduled update (§7), applies the pure selection step, and publishes
@@ -323,18 +357,23 @@ function useTocTracker(trackerProps: {
 
   const navElementRef = React.useRef<HTMLElement | null>(null);
   const currentIdRef = React.useRef<string | null>(null);
-  const frameRequestRef = React.useRef<number | null>(null);
   // The last configuration commit; measurements read this instead of
   // render-captured values so a question asked by a scroll event between
-  // the reads and the state write always sees committed props.
-  const committedPropsRef = React.useRef({ targetIds, scrollElement, activationOffset });
+  // the reads and the state write always sees committed props. The lazy
+  // initialization also skips a fresh basket allocation on every render.
+  const committedPropsRef = useRefWithInit(() => ({ targetIds, scrollElement, activationOffset }));
+
+  // Scheduled work is coalesced into at most one measurement per animation
+  // frame (§7): request() clears any previously scheduled call, and
+  // cancel() is idempotent, so the commit-effect cleanups below can cancel
+  // pending work without knowing whether a frame already fired.
+  const raf = useAnimationFrame();
 
   const [currentId, setCurrentIdState] = React.useState<string | null>(null);
 
-  // A stable wrapper: replacing the callback identity must not re-notify (§7).
-  const notifyCurrentIdChange = useStableCallback((changedId: string | null) => {
-    onCurrentChange?.(changedId);
-  });
+  // Replacing the callback identity must not re-notify (§7). The stable
+  // trampoline is undefined-safe, so an absent consumer callback is a no-op.
+  const notifyCurrentIdChange = useStableCallback(onCurrentChange);
 
   // Change-only publication (§7): identical values cause no state write and
   // no notification.
@@ -344,14 +383,6 @@ function useTocTracker(trackerProps: {
     setCurrentIdState(nextId);
     notifyCurrentIdChange(nextId);
   });
-
-  const cancelPendingMeasurement = React.useCallback(() => {
-    const pendingFrame = frameRequestRef.current;
-    if (pendingFrame !== null) {
-      cancelAnimationFrame(pendingFrame);
-      frameRequestRef.current = null;
-    }
-  }, []);
 
   // One scheduled update resolves configured IDs again and reads current
   // rectangles; there is no position cache and no invalidation system (§7).
@@ -433,14 +464,11 @@ function useTocTracker(trackerProps: {
     );
   }, [publishCurrentId]);
 
-  // Scheduled work is coalesced: at most one measurement per animation frame (§7).
+  // Coalescing (§7) comes from request(): it clears the previous call
+  // instead of stacking frames.
   const scheduleMeasurement = React.useCallback(() => {
-    if (frameRequestRef.current !== null) return;
-    frameRequestRef.current = requestAnimationFrame(() => {
-      frameRequestRef.current = null;
-      measureAndPublish();
-    });
-  }, [measureAndPublish]);
+    raf.request(measureAndPublish);
+  }, [measureAndPublish, raf]);
 
   // refresh() re-resolves targets and remeasures, coalescing like any other
   // scheduled update; it returns nothing and never scrolls (§8.3). The
@@ -497,7 +525,7 @@ function useTocTracker(trackerProps: {
       return () => {
         detachScrollEvent();
         detachResizeEvent();
-        cancelPendingMeasurement();
+        raf.cancel();
       };
     }
 
@@ -515,15 +543,19 @@ function useTocTracker(trackerProps: {
     return () => {
       detachScrollEvent();
       surfaceObserver.disconnect();
-      cancelPendingMeasurement();
+      raf.cancel();
     };
-  }, [activationOffset, cancelPendingMeasurement, publishCurrentId, scheduleMeasurement, scrollElement, targetIds]);
+  }, [activationOffset, publishCurrentId, raf, scheduleMeasurement, scrollElement, targetIds]);
 
   return { currentId, navElementRef };
 }
 
 // The shared composition interface (§8.2): native props merge, consumer
 // handlers run first, and className/style accept state-function forms.
+// React 19 delivers `ref` inside the props object, and these interfaces
+// carry it through `ComponentPropsWithRef`. Each part destructures `ref`
+// and passes it to `useRenderElement`'s `ref` param: `mergeProps` ignores
+// `ref`, so an unde-structured ref would be silently dropped.
 type TocCompositionProps<ElementType extends React.ElementType, State, OmittedKeys extends string = never> = Omit<
   React.ComponentPropsWithRef<ElementType>,
   "className" | "style" | OmittedKeys
@@ -532,12 +564,6 @@ type TocCompositionProps<ElementType extends React.ElementType, State, OmittedKe
   render?: React.ReactElement | ComponentRenderFn<HTMLProps, State> | undefined;
   style?: React.CSSProperties | ((state: State) => React.CSSProperties | undefined) | undefined;
 };
-
-// Fresh object literals carrying data-* attributes are rejected by
-// excess-property checks, so merge-arg values flow through this widened
-// element-props type: element props plus an unknown-key index signature.
-type TocElementProps<ElementType extends React.ElementType> =
-  React.ComponentPropsWithRef<ElementType> & Record<string, unknown>;
 
 /** Root props (§8.3). */
 export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
@@ -553,32 +579,6 @@ export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
   actionsRef?: React.RefObject<TocActions | null> | undefined;
 }
 
-/** List props (§8.4): structural part with an empty state. */
-export interface TocListProps extends TocCompositionProps<"ol", TocListState> {}
-
-/** Item props (§8.4): structural part with an empty state. */
-export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
-
-/** Link props (§8.4): component-owned `href`/`aria-current` cannot be re-set by typed consumers (§4.4). */
-export interface TocLinkProps extends TocCompositionProps<"a", TocLinkState, "href" | "aria-current"> {
-  /** The canonical target ID (§4.4): must be valid and a member of the root collection (§10). */
-  targetId: string;
-}
-
-function resolveClassName<State>(
-  classNameValue: string | ((state: State) => string | undefined) | undefined,
-  state: State,
-): string | undefined {
-  return typeof classNameValue === "function" ? classNameValue(state) : classNameValue;
-}
-
-function resolveStyle<State>(
-  styleValue: React.CSSProperties | ((state: State) => React.CSSProperties | undefined) | undefined,
-  state: State,
-): React.CSSProperties | undefined {
-  return typeof styleValue === "function" ? styleValue(state) : styleValue;
-}
-
 // Root state mapping: `currentId` must not emit a `data-current-id`
 // attribute; the root exposes `data-has-current` instead (§8.3).
 const TOC_ROOT_STATE_ATTRIBUTES_MAPPING = { currentId: () => null };
@@ -588,135 +588,130 @@ const TOC_ROOT_STATE_ATTRIBUTES_MAPPING = { currentId: () => null };
  * notifications; renders a `<nav>` with a default label consumers can
  * override through `aria-label`/`aria-labelledby`.
  */
-export const TocRoot: React.ForwardRefExoticComponent<Omit<TocRootProps, "ref"> & React.RefAttributes<HTMLElement>> = React.forwardRef<HTMLElement, TocRootProps>(
-  function TocRoot(componentProps, forwardedRef) {
-    const {
-      targetIds,
-      scrollElement,
-      activationOffset = 0,
-      onCurrentChange,
-      actionsRef,
-      className,
-      style,
-      render,
-      ...elementProps
-    } = componentProps;
+export function TocRoot(componentProps: TocRootProps) {
+  const {
+    targetIds,
+    scrollElement,
+    activationOffset = 0,
+    onCurrentChange,
+    actionsRef,
+    className,
+    style,
+    render,
+    ref,
+    ...elementProps
+  } = componentProps;
 
-    const tracker = useTocTracker({ targetIds, scrollElement, activationOffset, onCurrentChange, actionsRef });
+  // Input boundaries (§4.3, §10): synchronous throws at the root render
+  // commit. Parsing once per render keeps the commit effect's dependency
+  // identity (§7.4): the parsed array is fresh only when the prop value is.
+  const parsedTargetIds = React.useMemo(() => parseTargetCollection(targetIds), [targetIds]);
+  const parsedActivationOffset = parseActivationOffset(activationOffset);
 
-    // Input boundaries (§4.3, §10): synchronous throws at the root render commit.
-    validateTargetCollection(targetIds);
-    if (!isValidActivationOffset(activationOffset)) throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
+  const tracker = useTocTracker({
+    targetIds: parsedTargetIds,
+    scrollElement,
+    activationOffset: parsedActivationOffset,
+    onCurrentChange,
+    actionsRef,
+  });
 
-    const contextValue: TocRootContextValue = React.useMemo(
-      () => ({ targetIds, currentId: tracker.currentId }),
-      [targetIds, tracker.currentId],
-    );
+  const contextValue: TocRootContextValue = React.useMemo(
+    () => ({ targetIds: parsedTargetIds, currentId: tracker.currentId }),
+    [parsedTargetIds, tracker.currentId],
+  );
 
-    const state: TocRootState = { currentId: tracker.currentId };
-    const resolvedClassNameProps = resolveClassName(className, state);
-    const resolvedStyleProps = resolveStyle(style, state);
-    const classNameProps = resolvedClassNameProps === undefined ? undefined : { className: resolvedClassNameProps };
-    const styleProps = resolvedStyleProps === undefined ? undefined : { style: resolvedStyleProps };
-    const rootDataProps: TocElementProps<"nav"> = {
-      "data-slot": TOC_ROOT_SLOT,
-      "data-has-current": state.currentId !== null ? "" : undefined,
-    };
+  const state: TocRootState = { currentId: tracker.currentId };
 
-    const renderedElement = useRender<TocRootState, HTMLElement>({
-      defaultTagName: "nav",
-      render,
-      state,
-      stateAttributesMapping: TOC_ROOT_STATE_ATTRIBUTES_MAPPING,
-      ref: [forwardedRef, tracker.navElementRef],
-      props: mergePropsN<"nav">([DEFAULT_ROOT_LABEL_PROPS, elementProps, classNameProps, styleProps, rootDataProps]),
-    });
+  const renderedElement = useRenderElement<TocRootState, HTMLElement, "nav">("nav", componentProps, {
+    state,
+    ref: [ref, tracker.navElementRef],
+    stateAttributesMapping: TOC_ROOT_STATE_ATTRIBUTES_MAPPING,
+    props: [
+      DEFAULT_ROOT_LABEL_PROPS,
+      elementProps,
+      (props) => ({
+        ...props,
+        "data-slot": TOC_ROOT_SLOT,
+        "data-has-current": state.currentId !== null ? "" : undefined,
+      }),
+    ],
+  });
 
-    // The provider wraps the tracked elements; unmounting a presentation never
-    // changes what is tracked (§4.1).
-    return (
-      <TocRootContext.Provider value={contextValue}>{renderedElement}</TocRootContext.Provider>
-    );
-  },
-);
+  // The provider wraps the tracked elements; unmounting a presentation never
+  // changes what is tracked (§4.1).
+  return <TocRootContext.Provider value={contextValue}>{renderedElement}</TocRootContext.Provider>;
+}
+
+/** List props (§8.4): structural part with an empty state. */
+export interface TocListProps extends TocCompositionProps<"ol", TocListState> {}
 
 /** An ordered list level of the outline structure (§8.4). */
-export const TocList: React.ForwardRefExoticComponent<Omit<TocListProps, "ref"> & React.RefAttributes<HTMLOListElement>> = React.forwardRef<HTMLOListElement, TocListProps>(
-  function TocList(componentProps, forwardedRef) {
-    const { className, style, render, ...elementProps } = componentProps;
+export function TocList(componentProps: TocListProps) {
+  const { className, style, render, ref, ...elementProps } = componentProps;
 
-    const state = EMPTY_TOC_STATE;
-    const resolvedClassNameProps = resolveClassName(className, state);
-    const resolvedStyleProps = resolveStyle(style, state);
-    const classNameProps = resolvedClassNameProps === undefined ? undefined : { className: resolvedClassNameProps };
-    const styleProps = resolvedStyleProps === undefined ? undefined : { style: resolvedStyleProps };
+  return useRenderElement<TocListState, HTMLOListElement, "ol">("ol", componentProps, {
+    state: EMPTY_TOC_STATE,
+    ref,
+    props: [
+      elementProps,
+      (props) => ({ ...props, "data-slot": TOC_LIST_SLOT }),
+    ],
+  });
+}
 
-    const listDataProps: TocElementProps<"ol"> = { "data-slot": TOC_LIST_SLOT };
-    return useRender<TocListState, HTMLOListElement>({
-      defaultTagName: "ol",
-      render,
-      state,
-      ref: forwardedRef,
-      props: mergePropsN<"ol">([elementProps, classNameProps, styleProps, listDataProps]),
-    });
-  },
-);
+/** Item props (§8.4): structural part with an empty state. */
+export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
 /** An entry of the outline structure (§8.4); nesting is the consumer's list structure. */
-export const TocItem: React.ForwardRefExoticComponent<Omit<TocItemProps, "ref"> & React.RefAttributes<HTMLLIElement>> = React.forwardRef<HTMLLIElement, TocItemProps>(
-  function TocItem(componentProps, forwardedRef) {
-    const { className, style, render, ...elementProps } = componentProps;
+export function TocItem(componentProps: TocItemProps) {
+  const { className, style, render, ref, ...elementProps } = componentProps;
 
-    const state = EMPTY_TOC_STATE;
-    const resolvedClassNameProps = resolveClassName(className, state);
-    const resolvedStyleProps = resolveStyle(style, state);
-    const classNameProps = resolvedClassNameProps === undefined ? undefined : { className: resolvedClassNameProps };
-    const styleProps = resolvedStyleProps === undefined ? undefined : { style: resolvedStyleProps };
+  return useRenderElement<TocItemState, HTMLLIElement, "li">("li", componentProps, {
+    state: EMPTY_TOC_STATE,
+    ref,
+    props: [
+      elementProps,
+      (props) => ({ ...props, "data-slot": TOC_ITEM_SLOT }),
+    ],
+  });
+}
 
-    const itemDataProps: TocElementProps<"li"> = { "data-slot": TOC_ITEM_SLOT };
-    return useRender<TocItemState, HTMLLIElement>({
-      defaultTagName: "li",
-      render,
-      state,
-      ref: forwardedRef,
-      props: mergePropsN<"li">([elementProps, classNameProps, styleProps, itemDataProps]),
-    });
-  },
-);
+/** Link props (§8.4): component-owned `href`/`aria-current` cannot be re-set by typed consumers (§4.4). */
+export interface TocLinkProps extends TocCompositionProps<"a", TocLinkState, "href" | "aria-current"> {
+  /** The canonical target ID (§4.4): must be valid and a member of the root collection (§10). */
+  targetId: string;
+}
+
 /**
  * A native fragment link to one configured target (§8.5). Component-owned
  * `href` and `aria-current` win over conflicting consumer values at runtime
  * (§4.4); consumer handlers stay merged on the link.
  */
-export const TocLink: React.ForwardRefExoticComponent<Omit<TocLinkProps, "ref"> & React.RefAttributes<HTMLAnchorElement>> = React.forwardRef<HTMLAnchorElement, TocLinkProps>(
-  function TocLink(componentProps, forwardedRef) {
-    const rootContext = React.useContext(TocRootContext);
-    const { targetId, className, style, render, ...elementProps } = componentProps;
+export function TocLink(componentProps: TocLinkProps) {
+  const rootContext = React.useContext(TocRootContext);
+  const { targetId, className, style, render, ref, ...elementProps } = componentProps;
 
-    // Boundaries (§10): identity first, then context, then membership.
-    if (!isValidTargetId(targetId)) throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
-    if (rootContext === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
-    if (!rootContext.targetIds.includes(targetId)) throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
+  // Boundaries (§10): identity first, then context, then membership.
+  if (!isValidTargetId(targetId)) throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
+  if (rootContext === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
+  if (!rootContext.targetIds.includes(targetId)) throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
 
-    const state: TocLinkState = { current: rootContext.currentId === targetId };
-    const resolvedClassNameProps = resolveClassName(className, state);
-    const resolvedStyleProps = resolveStyle(style, state);
-    const classNameProps = resolvedClassNameProps === undefined ? undefined : { className: resolvedClassNameProps };
-    const styleProps = resolvedStyleProps === undefined ? undefined : { style: resolvedStyleProps };
+  const state: TocLinkState = { current: rootContext.currentId === targetId };
 
-    const linkDataProps: TocElementProps<"a"> = {
-      "data-slot": TOC_LINK_SLOT,
-      // The component owns the fragment encoding (§4.2); a conflicting consumer value loses at runtime (§4.4).
-      href: `#${encodeURIComponent(targetId)}`,
-      "aria-current": state.current ? ARIA_CURRENT_LOCATION : undefined,
-    };
-    return useRender<TocLinkState, HTMLAnchorElement>({
-      defaultTagName: "a",
-      render,
-      state,
-      ref: forwardedRef,
-      props: mergePropsN<"a">([elementProps, classNameProps, styleProps, linkDataProps]),
-    });
-  },
-);
-
+  return useRenderElement<TocLinkState, HTMLAnchorElement, "a">("a", componentProps, {
+    state,
+    ref,
+    // The component owns the fragment encoding and the current marker (§4.4);
+    // the last member keeps both beating conflicting consumer values.
+    props: [
+      elementProps,
+      (props) => ({
+        ...props,
+        "data-slot": TOC_LINK_SLOT,
+        href: `#${encodeURIComponent(targetId)}`,
+        "aria-current": state.current ? ARIA_CURRENT_LOCATION : undefined,
+      }),
+    ],
+  });
+}

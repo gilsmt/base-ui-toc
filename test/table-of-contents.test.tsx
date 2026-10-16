@@ -6,8 +6,8 @@ import {
   cleanHeadingTitle,
   isValidActivationOffset,
   isValidTargetId,
+  parseTargetCollection,
   selectCurrentTargetId,
-  validateTargetCollection,
   type TocGeometrySample,
   type TocTargetGeometry,
   type Heading,
@@ -67,24 +67,24 @@ describe("isValidTargetId", () => {
   });
 });
 
-describe("validateTargetCollection", () => {
-  const collect = (targetIds: readonly unknown[]) => () => validateTargetCollection(targetIds);
+describe("parseTargetCollection", () => {
+  const parse = (targetIds: readonly unknown[]) => () => parseTargetCollection(targetIds);
 
   test("passes a valid unique collection, including the empty collection", () => {
-    expect(collect([])).not.toThrow();
-    expect(collect(["intro", "faq"])).not.toThrow();
-    expect(collect(["café", "😀", "Ид"])).not.toThrow();
+    expect(parse([])).not.toThrow();
+    expect(parse(["intro", "faq"])).not.toThrow();
+    expect(parse(["café", "😀", "Ид"])).not.toThrow();
   });
 
   test("throws on a duplicate entry", () => {
-    expect(collect(["intro", "faq", "intro"])).toThrow();
-    expect(collect(["intro", "intro"])).toThrow();
+    expect(parse(["intro", "faq", "intro"])).toThrow();
+    expect(parse(["intro", "intro"])).toThrow();
   });
 
   test("throws on an invalid entry (invalid ID or non-string)", () => {
-    expect(collect(["intro", "sp ace"])).toThrow();
-    expect(collect(["intro", ""])).toThrow();
-    expect(collect(["intro", 5])).toThrow();
+    expect(parse(["intro", "sp ace"])).toThrow();
+    expect(parse(["intro", ""])).toThrow();
+    expect(parse(["intro", 5])).toThrow();
   });
 });
 
