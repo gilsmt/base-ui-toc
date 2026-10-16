@@ -40,8 +40,8 @@ Each omission is deliberate. A consumer can compose them outside the core; the c
 - **Runtime imports are limited to:**
   - `react` (and JSX runtime),
   - React DOM types,
-  - `@base-ui/react/use-render` and `@base-ui/react/merge-props`,
-  - `@base-ui/utils` subpaths that the implementation actually uses (candidates verified available in 0.5.0: `useIsoLayoutEffect`, `useStableCallback`, `useValueAsRef`, `useMergedRefs`/`useMergedRefsN`, `owner`, `addEventListener`, `useControlled`).
+  - `@base-ui/react/internals/useRenderElement` — a published-but-internals subpath the whole part pipeline is built on; drift pinned by the peer ranges,
+  - `@base-ui/utils` subpaths that the implementation actually uses (verified available in 0.5.0: `addEventListener`, `useAnimationFrame`, `useIsoLayoutEffect`, `useRefWithInit`, `useStableCallback`). Type-only imports stay unrestricted.
 - No additional runtime dependencies. No private Base UI imports. A missing `@base-ui/utils` export is a build failure, not an inline reimplementation.
 - **Geometry model:** physical, vertical, top-to-bottom, in layout-viewport coordinates. RTL text and RTL columns are supported because they do not reverse vertical order. The layout viewport is the boundary; visual-viewport activation and pinch-zoom are out of scope (§2).
 - **Verification:** manual browser QA is the standard for scrolling, navigation, focus, and assistive behavior (§15). `bun:test` unit tests cover pure logic with synthetic inputs (§16).
@@ -417,3 +417,4 @@ Compressed record of the interview, for traceability. R1–R6 = rounds; Q number
 | Utilities | Flat `{id,title,level}` snapshot; usable-ID errors; plus pure nested-outline builder (R5 Q35–Q36, Q41–Q43) |
 | Server | Normal rendering, `null` initial; empty states consumer-owned (R5 Q44) |
 | Close-out (adopted recommendations) | Fragment-alias and `<base>` preconditions (§4.4/13); one-current-link-per-landmark authoring rule; immediate-null transition rule (§4.5); builder rules and always-present `children` (§9.2); plain `Error`, non-normative messages (§10); immutable-input contract (§4.1) |
+| Close-out (R7 revision) | React 19 ref-as-prop delivery of `ref`; parts compose through published-internals `useRenderElement`; parse-don't-validate boundaries (`parseTargetCollection`, `parseActivationOffset`, `parseOutlineHeadings`); definition order follows one stated rule |

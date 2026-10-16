@@ -328,7 +328,7 @@ Run this checklist in current Chrome, Firefox, and Safari, in viewport and eleme
 
 ## Also exported
 
-The module also exports pure helpers (`isValidTargetId`, `validateTargetCollection`, `isValidActivationOffset`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the four parts and the two outline utilities.
+The module also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the four parts and the two outline utilities.
 
 ## Contributing
 
