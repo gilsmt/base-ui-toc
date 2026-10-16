@@ -128,7 +128,7 @@ The tracked navigation landmark. Renders a `<nav>` element.
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `targetIds` | `readonly string[]` | — | The ordered destination IDs. This collection alone is the source of truth for membership and order: mounted links never add, remove, reorder, or hide a target. Treat it as an immutable snapshot; replace the array to reconfigure. An empty collection is valid: trackers run, `currentId` is `null`, and the empty landmark is your decision. |
-| `scrollElement` | `Element \| null` | — | The tracked scrolling surface. Omit to track the document viewport. Pass an element to track that scrollport. `null` deactivates tracking: `currentId` is `null`; this is not a fallback to the viewport. One `TocRoot` tracks one surface. |
+| `scrollElement` | `Element \| null` | `undefined` | The tracked scrolling surface. Omit to track the document viewport. Passing the tracking document's root element is equivalent to omitting it: the root element is the viewport. Pass an element to track that scrollport. `null` deactivates tracking: `currentId` is `null`; this is not a fallback to the viewport. One `TocRoot` tracks one surface. |
 | `activationOffset` | `number` | `0` | CSS pixels below the surface top edge that count as "reached". Must be finite and non-negative. Tracking-only: coordinate with CSS `scroll-padding` and `scroll-margin` for navigation landings. |
 | `onCurrentChange` | `(currentId: string \| null) => void` | — | Change-only notification of the current target ID. Runs after commit, never during render. Replacing the callback identity does not re-notify the current value. |
 | `actionsRef` | `React.RefObject<TocActions \| null>` | — | Receives `{ refresh(): void }`. Distinct from `ref` by design. |
@@ -250,7 +250,7 @@ Documented gaps — with no trigger, not bugs:
 
 Reaching a moved position still needs a scroll; otherwise the content owner calls `refresh()`. The component runs no `MutationObserver`, no interval, and no continuous polling.
 
-A `TocLink`'s membership and the collection's validity throw synchronously at render. An element-mode target that resolves outside its configured scroller throws during the measurement effect, because targets in element mode must be DOM descendants of the scroller.
+A `TocLink`'s membership and the collection's validity throw synchronously at render. An element-mode target that resolves outside its configured scroller throws during the measurement effect, because targets in element mode must be DOM descendants of the scroller. The error surfaces as an uncaught exception from the scheduled measurement callback, and React error boundaries do not catch it. The error repeats on every scheduled event while the configuration stays broken.
 
 ### Immediate `null` transitions
 
