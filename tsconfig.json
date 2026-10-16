@@ -57,5 +57,11 @@
         "incremental": true,
     },
     "include": ["src", "test"],
-    "exclude": ["node_modules", "playground", "dist"],
+    "exclude": [
+        "node_modules",
+        "playground",
+        "dist",
+        /* Reference snapshots: not product source and not resolvable from the installed dependencies. */
+        "src/references",
+    ],
 }
