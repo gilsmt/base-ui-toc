@@ -11,6 +11,7 @@ import {
   type TocGeometrySample,
   type TocTargetGeometry,
   type Heading,
+  type TocLinkProps,
   TocItem,
   TocLink,
   TocList,
@@ -153,7 +154,7 @@ describe("selectCurrentTargetId", () => {
     expect(selectCurrentTargetId(sample([geometry("a", null), geometry("b", null)], 0, true))).toBe(null);
   });
 
-  test("selects targets below the offset only when they cross a large offset", () => {
+  test("selects a target whose headroom is at/below a large offset, and reports null otherwise", () => {
     expect(selectCurrentTargetId(sample([geometry("a", 100)], 500))).toBe("a");
     expect(selectCurrentTargetId(sample([geometry("a", 100)], 50))).toBe(null);
   });
@@ -359,5 +360,80 @@ describe("SSR smoke", () => {
 
     expect(markup).toContain(`data-slot="toc-root"`);
     expect(markup).toContain(`aria-label="Table of contents"`);
+  });
+});
+
+describe("SSR render boundaries", () => {
+  test("throws at the Root for an invalid targetIds entry", () => {
+    expect(() => renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["sp ace"] }))).toThrow();
+  });
+
+  test("throws at the Root for a duplicate targetIds entry", () => {
+    expect(() => renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["intro", "intro"] }))).toThrow();
+  });
+
+  test("throws at the Root for a non-finite or negative activationOffset", () => {
+    expect(() =>
+      renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["intro"], activationOffset: Number.NaN })),
+    ).toThrow();
+    expect(() =>
+      renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["intro"], activationOffset: Infinity })),
+    ).toThrow();
+    expect(() =>
+      renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["intro"], activationOffset: -1 })),
+    ).toThrow();
+  });
+
+  test("throws at the Link render for an invalid targetId", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        React.createElement(
+          TocRoot,
+          { targetIds: ["intro"] },
+          React.createElement(TocLink, { targetId: "sp ace" }, "Intro"),
+        ),
+      ),
+    ).toThrow();
+  });
+
+  test("throws at the Link render for a targetId outside the root collection", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        React.createElement(
+          TocRoot,
+          { targetIds: ["intro"] },
+          React.createElement(TocLink, { targetId: "other" }, "Other"),
+        ),
+      ),
+    ).toThrow();
+  });
+
+  test("throws for a TocLink outside any TocRoot", () => {
+    expect(() => renderToStaticMarkup(React.createElement(TocLink, { targetId: "intro" }, "Intro"))).toThrow();
+  });
+
+  test("component-owned href and aria-current beat conflicting consumer values", () => {
+    // A JS caller can pass the component-owned props that TS consumers
+    // cannot set; the component-owned values must win at runtime (§4.4).
+    const conflictingProps = { targetId: "intro", href: "#conflict", "aria-current": "page" } as unknown as TocLinkProps;
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { targetIds: ["intro"] },
+        React.createElement(TocLink, conflictingProps, "Intro"),
+      ),
+    );
+    // The derived fragment encoding wins, and the consumer values vanish.
+    expect(markup).toContain(`href="#intro"`);
+    expect(markup).not.toContain(`href="#conflict"`);
+    expect(markup).not.toContain(`aria-current="page"`);
+  });
+
+  test("a consumer aria-label overrides the default landmark label", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(TocRoot, { targetIds: ["intro"], "aria-label": "Consumer label" }),
+    );
+    expect(markup).toContain(`aria-label="Consumer label"`);
+    expect(markup).not.toContain(`aria-label="Table of contents"`);
   });
 });

@@ -55,7 +55,10 @@ const DEFAULT_ROOT_LABEL = "Table of contents";
 const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": DEFAULT_ROOT_LABEL };
 
 // A scroll position within this distance from the surface's maximum counts
-// as "at the bottom" (§6 leaves the sub-pixel tolerance to the implementation).
+// as "at the bottom" (§6 leaves the sub-pixel tolerance to the
+// implementation). The value is one whole pixel because engines round
+// fractional maximum scroll positions: the tolerance must not strand a
+// bottom state one rounding unit early.
 const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
 
 const INVALID_COLLECTION_MESSAGE = "Invalid target ID in targetIds: every entry must be a valid, unique target ID.";
@@ -64,13 +67,13 @@ const DUPLICATE_TARGET_MESSAGE_PREFIX = "Duplicate target ID: ";
 
 const INVALID_ACTIVATION_OFFSET_MESSAGE = "Invalid activationOffset: it must be a finite, non-negative number.";
 
-const INVALID_TARGET_ID_ON_LINK_MESSAGE = "Invalid targetId on TocLink: it must be a valid target ID (§4.2).";
+const INVALID_TARGET_ID_ON_LINK_MESSAGE = "Invalid targetId on TocLink: it must be a valid target ID.";
 
 const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
 
 const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX = "targetId is not in the root collection: ";
 
-const OWNERSHIP_ERROR_MESSAGE = "Toc target resolves outside its configured scroller (§5). Targets in element mode must be DOM descendants of the scroller.";
+const OWNERSHIP_ERROR_MESSAGE = "Toc target resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
 
 const INVALID_DISCOVERY_LEVEL_MESSAGE = "Invalid levels option: values must be integers from 1 to 6.";
 
@@ -83,6 +86,8 @@ const EMPTY_DISCOVERY_TITLE_MESSAGE = "Heading title is empty after cleaning exc
 const INVALID_OUTLINE_ID_MESSAGE_PREFIX = "Invalid heading ID in buildOutline input: ";
 
 const INVALID_OUTLINE_LEVEL_MESSAGE = "Invalid heading level in buildOutline input: it must be an integer from 1 to 6.";
+
+const INVALID_OUTLINE_TITLE_MESSAGE = "Invalid heading title in buildOutline input: it must be a string.";
 
 const DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX = "Duplicate heading ID in buildOutline input: ";
 
@@ -198,6 +203,9 @@ function validateOutlineHeadings(headings: readonly Heading[]): void {
   for (const entry of headings) {
     if (!isValidTargetId(entry.id)) throw new Error(INVALID_OUTLINE_ID_MESSAGE_PREFIX + String(entry.id));
     if (!isHeadingLevelValue(entry.level)) throw new Error(INVALID_OUTLINE_LEVEL_MESSAGE);
+    // A JS caller can supply junk inside typed fields; reject a non-string
+    // title explicitly before cleaning runs, so no TypeError escapes (§9.2).
+    if (typeof entry.title !== "string") throw new Error(INVALID_OUTLINE_TITLE_MESSAGE);
     cleanHeadingTitle(entry.title);
     if (seenIds.has(entry.id)) throw new Error(DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX + entry.id);
     seenIds.add(entry.id);
@@ -368,12 +376,18 @@ function useTocTracker(trackerProps: {
     let surfaceTopPx = 0;
     let hasSurfaceBottomReached = false;
 
-    if (committedScrollElement === undefined) {
+    // The document's root element tracks as the viewport (§5, §6); the mode
+    // note at the commit effect owns the full rationale.
+    if (committedScrollElement === undefined || committedScrollElement === docElement) {
       // Viewport mode (§6): the layout viewport's top edge is 0, and the
       // bottom exception needs the document viewport's overflow state.
       const view = doc.defaultView;
-      // A document without a window cannot be measured; the next event re-checks.
-      if (view === null) return;
+      // A document without a window cannot be measured, and tracking is
+      // inactive there (§4.5): publish null instead of keeping a stale value.
+      if (view === null) {
+        publishCurrentId(null);
+        return;
+      }
       hasSurfaceBottomReached =
         docElement.scrollHeight > docElement.clientHeight
         && view.scrollY >= docElement.scrollHeight - docElement.clientHeight - BOTTOM_MAX_SCROLL_TOLERANCE_PX;
@@ -385,7 +399,10 @@ function useTocTracker(trackerProps: {
         return;
       }
       surfaceElement = committedScrollElement;
-      surfaceTopPx = committedScrollElement.getBoundingClientRect().top;
+      // The surface top edge is the client-area top edge, not the border-box
+      // top: clientTop is the border-top width in px. Integer rounding at
+      // fractional borders is acceptable (§6).
+      surfaceTopPx = committedScrollElement.getBoundingClientRect().top + committedScrollElement.clientTop;
       hasSurfaceBottomReached =
         committedScrollElement.scrollHeight > committedScrollElement.clientHeight
         && committedScrollElement.scrollTop >= committedScrollElement.scrollHeight - committedScrollElement.clientHeight - BOTTOM_MAX_SCROLL_TOLERANCE_PX;
@@ -399,8 +416,13 @@ function useTocTracker(trackerProps: {
         continue;
       }
       // Ownership (§5): a resolved target outside its scroller is a
-      // configuration error, thrown while the measurement runs (§10).
-      if (surfaceElement !== null && !surfaceElement.contains(targetElement)) throw new Error(OWNERSHIP_ERROR_MESSAGE);
+      // configuration error, thrown while the measurement runs (§10). The
+      // target must be a proper DOM descendant: contains() is inclusive, so
+      // the scroller element itself is excluded.
+      if (surfaceElement !== null) {
+        const isTargetOwnedByScroller = targetElement !== surfaceElement && surfaceElement.contains(targetElement);
+        if (!isTargetOwnedByScroller) throw new Error(OWNERSHIP_ERROR_MESSAGE);
+      }
       const targetRect = targetElement.getBoundingClientRect();
       const headroomPx = targetElement.getClientRects().length > 0 ? targetRect.top - surfaceTopPx : null;
       targetsGeometry.push({ id: targetId, headroomPx });
@@ -449,16 +471,28 @@ function useTocTracker(trackerProps: {
     // First client commit schedules the initial measurement (§7.1).
     scheduleMeasurement();
 
-    if (scrollElement === undefined) {
+    const navElement = navElementRef.current;
+    // Unreachable: refs attach before layout effects, and the nav element
+    // always renders.
+    if (navElement === null) return;
+    const doc = navElement.ownerDocument;
+
+    // Viewport mode covers an omitted `scrollElement` and also the tracking
+    // document's root element. Per CSSOM View, root-scroller `scroll` events
+    // target the Document, so a listener on `documentElement` never fires,
+    // and `documentElement`'s bounding-rect top is the document origin, not
+    // the viewport top. The root element therefore tracks exactly like the
+    // omitted element (§5, §6), and element-mode ownership never applies.
+    if (scrollElement === undefined || scrollElement === doc.documentElement) {
       // Viewport mode: the layout viewport's scroll and resize (§7.2–7.3).
-      const navElement = navElementRef.current;
-      // Unreachable: refs attach before layout effects, and the nav element
-      // always renders.
-      if (navElement === null) return;
-      const view = navElement.ownerDocument.defaultView;
-      // A document without a window cannot carry listeners.
-      if (view === null) return;
-      const detachScrollEvent = addEventListener(view, "scroll", scheduleMeasurement);
+      const view = doc.defaultView;
+      // A document without a window cannot carry listeners, and tracking is
+      // inactive there (§4.5): publish null instead of keeping a stale value.
+      if (view === null) {
+        publishCurrentId(null);
+        return;
+      }
+      const detachScrollEvent = addEventListener(view, "scroll", scheduleMeasurement, { passive: true });
       const detachResizeEvent = addEventListener(view, "resize", scheduleMeasurement);
       return () => {
         detachScrollEvent();
@@ -470,7 +504,7 @@ function useTocTracker(trackerProps: {
     // Element mode: the scroller's scroll and its box resizes (§7.2–7.3).
     // No usable box at commit leaves tracking inactive right away (§4.5).
     if (scrollElement.clientHeight <= 0) publishCurrentId(null);
-    const detachScrollEvent = addEventListener(scrollElement, "scroll", scheduleMeasurement);
+    const detachScrollEvent = addEventListener(scrollElement, "scroll", scheduleMeasurement, { passive: true });
     const surfaceObserver = new ResizeObserver(() => {
       // The 0→size box transition reactivates tracking; a lost box
       // deactivates it immediately (§7.3, §4.5).
