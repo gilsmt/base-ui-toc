@@ -64,22 +64,23 @@ export function ScrollContainer() {
 
 function ScrollSection({ heading }: { heading: Heading }) {
   return (
-    <section id={heading.id} className="pg-scroll-section">
+    <section className="pg-scroll-section">
       <SectionHeading heading={heading} />
       <p>{FILLER_PARAGRAPH}</p>
     </section>
   );
 }
 
-// The tracker validates no tag names: the section mirrors the entry level.
+// The tracker validates no tag names: the heading carries the anchor id and
+// mirrors the entry level.
 function SectionHeading({ heading }: { heading: Heading }) {
   switch (heading.level) {
     case 2:
-      return <h2>{heading.title}</h2>;
+      return <h2 id={heading.id}>{heading.title}</h2>;
     case 3:
-      return <h3>{heading.title}</h3>;
+      return <h3 id={heading.id}>{heading.title}</h3>;
     case 4:
-      return <h4>{heading.title}</h4>;
+      return <h4 id={heading.id}>{heading.title}</h4>;
     // The static data holds only levels 2-4; the Heading annotation permits
     // any level, so the assumption is explicit.
     default:
