@@ -1,0 +1,2 @@
+# Build output of this app only; the root gitignore covers node_modules.
+dist
