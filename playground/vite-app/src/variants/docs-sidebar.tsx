@@ -2,10 +2,8 @@ import * as React from "react";
 import {
   TocRoot,
   TocList,
-  TocItem,
-  TocLink,
+  TocGroup,
   useTocOutline,
-  type HeadingGroup,
 } from "../../../../src/table-of-contents";
 import "./docs-sidebar.css";
 
@@ -26,7 +24,7 @@ export function DocsSidebar() {
       <aside className="pg-docs-sidebar">
         <TocRoot headings={headings} className="pg-docs-nav">
           <TocList>
-            {(group) => <DocsOutlineItemGroup key={group.id} group={group} />}
+            {(group) => <TocGroup key={group.id} group={group} />}
           </TocList>
         </TocRoot>
       </aside>
@@ -123,24 +121,6 @@ export function DocsSidebar() {
         </section>
       </article>
     </div>
-  );
-}
-
-// The local outline renderer: one item per group; the top-level lists map
-// through `TocList` function children, and each deeper level maps the group's
-// children from the outline data the consumer recurses over.
-function DocsOutlineItemGroup({ group }: { group: HeadingGroup }) {
-  return (
-    <TocItem>
-      <TocLink targetId={group.id}>{group.title}</TocLink>
-      {group.children.length > 0 && (
-        <TocList>
-          {group.children.map((child) => (
-            <DocsOutlineItemGroup key={child.id} group={child} />
-          ))}
-        </TocList>
-      )}
-    </TocItem>
   );
 }
 
