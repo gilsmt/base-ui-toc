@@ -18,13 +18,13 @@ export const variants: VariantEntry[] = [
   {
     id: "docs-sidebar",
     label: "Document scroll",
-    description: "discoverHeadings + document viewport tracking",
+    description: "useTocOutline snapshot + document viewport tracking",
     element: <DocsSidebar />,
   },
   {
     id: "scroll-container",
     label: "Embedded scroll area",
-    description: "buildOutline data + element scrollport",
+    description: "static headings data + element scrollport",
     element: <ScrollContainer />,
   },
   {
@@ -36,7 +36,7 @@ export const variants: VariantEntry[] = [
   {
     id: "dynamic-targets",
     label: "Dynamic targets",
-    description: "targetIds commits, unavailable targets",
+    description: "manual discovery commits, unavailable targets",
     element: <DynamicTargets />,
   },
 ];

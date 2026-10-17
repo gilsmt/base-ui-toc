@@ -1,6 +1,12 @@
 import * as React from "react";
-import { TocRoot, buildOutline, type Heading } from "../../../../src/table-of-contents";
-import { TocOutline } from "../shared/toc-outline";
+import {
+  TocRoot,
+  TocList,
+  TocItem,
+  TocLink,
+  type Heading,
+  type HeadingGroup,
+} from "../../../../src/table-of-contents";
 import "./scroll-container.css";
 
 // Hard-coded source data: discovery is skipped so the grouping edge cases
@@ -24,12 +30,6 @@ const HEADINGS: readonly Heading[] = [
   { id: "colophon", title: "Colophon", level: 2 },
 ];
 
-// Pure grouping over static data, so the outline is a module constant.
-const OUTLINE = buildOutline(HEADINGS);
-// Grouping preserves document order, so the flat tracked collection
-// derives from the flat source directly.
-const TARGET_IDS: readonly string[] = HEADINGS.map((heading) => heading.id);
-
 const FILLER_PARAGRAPH =
   "This body text fills the scrollbox so several headings travel past the activation line in one scroll.";
 
@@ -44,12 +44,10 @@ export function ScrollContainer() {
   return (
     <div className="pg-scroll">
       <aside className="pg-scroll-sidebar">
-        <TocRoot
-          targetIds={TARGET_IDS}
-          scrollElement={scrollElement}
-          className="pg-scroll-nav"
-        >
-          <TocOutline outline={OUTLINE} />
+        <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-scroll-nav">
+          <TocList>
+            {(group) => <ScrollOutlineItemGroup key={group.id} group={group} />}
+          </TocList>
         </TocRoot>
       </aside>
       <div className="pg-scroll-view" ref={attachScrollElement}>
@@ -68,6 +66,24 @@ function ScrollSection({ heading }: { heading: Heading }) {
       <SectionHeading heading={heading} />
       <p>{FILLER_PARAGRAPH}</p>
     </section>
+  );
+}
+
+// The local outline renderer: one item per group; the top-level list maps
+// through `TocList` function children, and each deeper level maps the group's
+// children from the outline data the consumer recurses over.
+function ScrollOutlineItemGroup({ group }: { group: HeadingGroup }) {
+  return (
+    <TocItem>
+      <TocLink targetId={group.id}>{group.title}</TocLink>
+      {group.children.length > 0 && (
+        <TocList>
+          {group.children.map((child) => (
+            <ScrollOutlineItemGroup key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
+    </TocItem>
   );
 }
 

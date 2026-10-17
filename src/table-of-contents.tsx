@@ -11,9 +11,11 @@ import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
 /**
  * An unstyled in-page navigation component. `TocRoot` tracks one current
- * location in a scrolling surface (§6); `TocList`, `TocItem`, and `TocLink`
- * compose native fragment links over it. `discoverHeadings` and
- * `buildOutline` supply the target collection and presentational nesting.
+ * location in a scrolling surface (§6) from one tracking lane — a
+ * `targetIds` collection or a `headings` entry list (§4.1); `TocList`,
+ * `TocItem`, and `TocLink` compose native fragment links over it.
+ * `useTocOutline`, `discoverHeadings`, and `buildOutline` supply the heading
+ * data and presentational nesting.
  *
  * Specification: SPEC.md. Geometry model is physical, vertical, top-to-bottom.
  */
@@ -68,11 +70,15 @@ const DUPLICATE_TARGET_MESSAGE_PREFIX = "Duplicate target ID: ";
 
 const INVALID_ACTIVATION_OFFSET_MESSAGE = "Invalid activationOffset: it must be a finite, non-negative number.";
 
+const INVALID_TRACKING_SOURCE_MESSAGE = "TocRoot receives one tracking source: targetIds or headings.";
+
 const INVALID_TARGET_ID_ON_LINK_MESSAGE = "Invalid targetId on TocLink: it must be a valid target ID.";
 
 const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
 
 const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX = "targetId is not in the root collection: ";
+
+const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE = "TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.";
 
 const OWNERSHIP_ERROR_MESSAGE = "Toc target resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
 
@@ -99,6 +105,10 @@ const TOC_LINK_SLOT = "toc-link";
 
 // TocList and TocItem share one empty state; it carries no attributes.
 const EMPTY_TOC_STATE: TocListState = {};
+
+// The empty snapshot the outline hook yields on the server and on a null
+// scope; the stable identity keeps the outline derivation from rebuilding.
+const EMPTY_HEADINGS: readonly Heading[] = [];
 
 // Definition order: module doc, then constants, then types. Shared pure
 // helpers sit above their first consumer, a helper with one consumer sits
@@ -162,6 +172,8 @@ export interface TocActions {
 interface TocRootContextValue {
   /** Ordered destination IDs of the owning Root (§4.1); identity is the committed prop value. */
   targetIds: readonly string[];
+  /** The outline the Root built from its `headings` lane; `null` in the `targetIds` lane (§8.3, §8.4). */
+  outline: readonly HeadingGroup[] | null;
   /** The current location this Root tracks; `null` before the first crossing (§6). */
   currentId: string | null;
 }
@@ -284,6 +296,43 @@ function parseOutlineHeadings(headings: readonly Heading[]): readonly CleanedHea
   return cleanedHeadings;
 }
 
+/**
+ * The tracking-source lanes of `TocRootProps` (§4.1, §8.3): exactly one is
+ * present, so the union makes the absent lane unrepresentable.
+ */
+export type TocTrackingSource =
+  | { lane: "targetIds"; targetIds: readonly string[] }
+  | { lane: "headings"; targetIds: readonly string[]; outline: readonly HeadingGroup[] };
+
+/**
+ * Tracking-source boundary (§4.1, §10): parse the Root's lane props once at
+ * the root render commit. The `targetIds` lane runs `parseTargetCollection`
+ * and owns no outline; the `headings` lane runs `buildOutline` — the single
+ * validator for entry shapes (no second parse over the derived ids) — and
+ * derives the flat collection from the same entries. Check order: the
+ * two-lanes error precedes the absent-lane error, and lane discrimination
+ * precedes per-lane parsing.
+ */
+export function parseTrackingSource(props: {
+  targetIds?: readonly string[] | undefined;
+  headings?: readonly Heading[] | undefined;
+}): TocTrackingSource {
+  const { targetIds, headings } = props;
+  if (targetIds !== undefined && headings !== undefined) throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
+  if (targetIds !== undefined) return { lane: "targetIds", targetIds: parseTargetCollection(targetIds) };
+  if (headings !== undefined) {
+    const outline = buildOutline(headings);
+    return {
+      lane: "headings",
+      // Grouping validated every id already, so the derived collection is a
+      // plain projection; it never re-runs the collection parser.
+      targetIds: headings.map((heading) => heading.id),
+      outline,
+    };
+  }
+  throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
+}
+
 /** Document-order heading snapshot with cleaned titles and no layout reads (§9.1). */
 export function discoverHeadings(
   scope: Element,
@@ -341,6 +390,36 @@ function collectTitleText(element: Element, fragments: string[]): void {
     if (isAttributeHidden || TITLE_EXCLUDED_TAG_NAMES.has(child.tagName.toLowerCase())) continue;
     collectTitleText(child, fragments);
   }
+}
+
+/**
+ * Client-side outline snapshot for consumers (§9.3): discovers the headings
+ * of `scope` in a layout effect, one snapshot per scope identity, and groups
+ * them through `buildOutline` (§9.2). A `null` scope and every server render
+ * yield the empty pair: the module reads no DOM outside effect callbacks
+ * (§12). Scope is the only input; options stay on `discoverHeadings`, so a
+ * scope identity change is the only re-discovery trigger. Content that
+ * mutates under the same element needs an explicit re-discovery (§9.1).
+ */
+export function useTocOutline(scope: Element | null): {
+  headings: readonly Heading[];
+  outline: readonly HeadingGroup[];
+} {
+  const [headings, setHeadings] = React.useState<readonly Heading[]>(EMPTY_HEADINGS);
+
+  // Detachment is a state, not a stale snapshot: a null scope yields the
+  // empty pair instead of the previous heading list.
+  useIsoLayoutEffect(() => {
+    if (scope === null) {
+      setHeadings(EMPTY_HEADINGS);
+      return;
+    }
+    setHeadings(discoverHeadings(scope));
+  }, [scope]);
+
+  const outline = React.useMemo(() => buildOutline(headings), [headings]);
+
+  return { headings, outline };
 }
 
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(undefined);
@@ -572,8 +651,18 @@ type TocCompositionProps<ElementType extends React.ElementType, State, OmittedKe
 
 /** Root props (§8.3). */
 export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
-  /** Ordered destination IDs (§4.1–§4.3). Immutable snapshot; replace to reconfigure. */
-  targetIds: readonly string[];
+  /**
+   * Ordered destination IDs (§4.1–§4.3) — the `targetIds` lane. Mutually
+   * exclusive with `headings`: exactly one lane is provided (§10). Immutable
+   * snapshot; replace to reconfigure.
+   */
+  targetIds?: readonly string[] | undefined;
+  /**
+   * Flat heading entries (§9.1) — the `headings` lane. Mutually exclusive
+   * with `targetIds` (§10). Root derives the flat collection from the entry
+   * ids and builds the outline through `buildOutline` (§9.2).
+   */
+  headings?: readonly Heading[] | undefined;
   /** The tracked scrolling surface. Omit for the document viewport; `null` deactivates tracking (§5). */
   scrollElement?: Element | null | undefined;
   /** CSS pixels below the surface top edge that count as "reached" (§6). */
@@ -596,6 +685,7 @@ const TOC_ROOT_STATE_ATTRIBUTES_MAPPING = { currentId: () => null };
 export function TocRoot(componentProps: TocRootProps) {
   const {
     targetIds,
+    headings,
     scrollElement,
     activationOffset = 0,
     onCurrentChange,
@@ -609,12 +699,17 @@ export function TocRoot(componentProps: TocRootProps) {
 
   // Input boundaries (§4.3, §10): synchronous throws at the root render
   // commit. Parsing once per render keeps the commit effect's dependency
-  // identity (§7.4): the parsed array is fresh only when the prop value is.
-  const parsedTargetIds = React.useMemo(() => parseTargetCollection(targetIds), [targetIds]);
+  // identity (§7.4): the parsed collection is fresh only when its source
+  // prop value is, and the headings lane derives its collection and outline
+  // on the same `headings` identity.
+  const trackedSource = React.useMemo(
+    () => parseTrackingSource({ targetIds, headings }),
+    [targetIds, headings],
+  );
   const parsedActivationOffset = parseActivationOffset(activationOffset);
 
   const tracker = useTocTracker({
-    targetIds: parsedTargetIds,
+    targetIds: trackedSource.targetIds,
     scrollElement,
     activationOffset: parsedActivationOffset,
     onCurrentChange,
@@ -622,8 +717,12 @@ export function TocRoot(componentProps: TocRootProps) {
   });
 
   const contextValue: TocRootContextValue = React.useMemo(
-    () => ({ targetIds: parsedTargetIds, currentId: tracker.currentId }),
-    [parsedTargetIds, tracker.currentId],
+    () => ({
+      targetIds: trackedSource.targetIds,
+      outline: trackedSource.lane === "headings" ? trackedSource.outline : null,
+      currentId: tracker.currentId,
+    }),
+    [trackedSource, tracker.currentId],
   );
 
   const state: TocRootState = { currentId: tracker.currentId };
@@ -648,19 +747,40 @@ export function TocRoot(componentProps: TocRootProps) {
   return <TocRootContext.Provider value={contextValue}>{renderedElement}</TocRootContext.Provider>;
 }
 
-/** List props (§8.4): structural part with an empty state. */
-export interface TocListProps extends TocCompositionProps<"ol", TocListState> {}
+/** List props (§8.4): structural part with an empty state; function children map the Root-owned outline. */
+export interface TocListProps extends TocCompositionProps<"ol", TocListState, "children"> {
+  /**
+   * Plain children render consumer-authored content as-is (§8.4). A function
+   * child receives one outline group per call (Select.Value shape) and maps
+   * the `headings` lane's outline onto the `<ol>` (§8.4); keys stay
+   * consumer-authored.
+   */
+  children?: React.ReactNode | ((group: HeadingGroup) => React.ReactNode) | undefined;
+}
 
 /** An ordered list level of the outline structure (§8.4). */
 export function TocList(componentProps: TocListProps) {
-  const { className, style, render, ref, ...elementProps } = componentProps;
+  const rootContext = React.useContext(TocRootContext);
+  const { className, style, render, ref, children: childrenProp, ...elementProps } = componentProps;
+
+  // Plain children pass through untouched in both lanes and outside any
+  // Root. A function child maps the Root-owned outline (§8.4), so the
+  // `targetIds` lane — which owns no outline — is a configuration error.
+  let children = childrenProp;
+  if (typeof children === "function") {
+    // The callback reads a const, not the reassigned `children` binding.
+    const renderGroup = children;
+    const outline = rootContext === undefined ? null : rootContext.outline;
+    if (outline === null) throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
+    children = outline.map((group) => renderGroup(group));
+  }
 
   return useRenderElement<TocListState, HTMLOListElement, "ol">("ol", componentProps, {
     state: EMPTY_TOC_STATE,
     ref,
     props: [
       elementProps,
-      (props) => ({ ...props, "data-slot": TOC_LIST_SLOT }),
+      (props) => ({ ...props, "data-slot": TOC_LIST_SLOT, children }),
     ],
   });
 }

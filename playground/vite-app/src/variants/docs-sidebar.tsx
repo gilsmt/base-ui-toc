@@ -1,11 +1,12 @@
 import * as React from "react";
 import {
   TocRoot,
-  buildOutline,
-  discoverHeadings,
-  type Heading,
+  TocList,
+  TocItem,
+  TocLink,
+  useTocOutline,
+  type HeadingGroup,
 } from "../../../../src/table-of-contents";
-import { TocOutline } from "../shared/toc-outline";
 import "./docs-sidebar.css";
 
 // Repeat one sentence so the article length stays easy to reason about.
@@ -13,34 +14,25 @@ const FILLER_PARAGRAPH =
   "The section body holds filler text so the page grows long enough to scroll through several headings in one read.";
 
 export function DocsSidebar() {
-  const articleRef = React.useRef<HTMLElement | null>(null);
-  const [headings, setHeadings] = React.useState<readonly Heading[]>([]);
+  const [article, setArticle] = React.useState<HTMLElement | null>(null);
 
-  // Discovery is a client-side DOM read (README): run it after mount, never
-  // during rendering, and guard on the article being live.
-  React.useLayoutEffect(() => {
-    const article = articleRef.current;
-    if (article === null) {
-      return;
-    }
-    setHeadings(discoverHeadings(article));
-  }, []);
-
-  const outline = buildOutline(headings);
+  // The hook owns the client-side snapshot: discovery runs in a layout effect
+  // after commit, not during rendering, once per article identity (README §Server
+  // rendering). The attachment goes through callback-ref state.
+  const { headings } = useTocOutline(article);
 
   return (
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
-        <TocRoot
-          targetIds={headings.map((heading) => heading.id)}
-          className="pg-docs-nav"
-        >
-          <TocOutline outline={outline} />
+        <TocRoot headings={headings} className="pg-docs-nav">
+          <TocList>
+            {(group) => <DocsOutlineItemGroup key={group.id} group={group} />}
+          </TocList>
         </TocRoot>
       </aside>
       {/* Headings carry scroll-margin-top in the stylesheet so fragment
           landings clear the sticky header; the value matches its height. */}
-      <article className="pg-docs-article" ref={articleRef}>
+      <article className="pg-docs-article" ref={setArticle}>
         <section>
           <h2 id="overview">Overview</h2>
           <p>
@@ -131,6 +123,24 @@ export function DocsSidebar() {
         </section>
       </article>
     </div>
+  );
+}
+
+// The local outline renderer: one item per group; the top-level lists map
+// through `TocList` function children, and each deeper level maps the group's
+// children from the outline data the consumer recurses over.
+function DocsOutlineItemGroup({ group }: { group: HeadingGroup }) {
+  return (
+    <TocItem>
+      <TocLink targetId={group.id}>{group.title}</TocLink>
+      {group.children.length > 0 && (
+        <TocList>
+          {group.children.map((child) => (
+            <DocsOutlineItemGroup key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
+    </TocItem>
   );
 }
 

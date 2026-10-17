@@ -36,31 +36,61 @@ Import the parts, and assemble them together:
 ```tsx
 import {
   TocRoot, TocList, TocItem, TocLink,
-  discoverHeadings, buildOutline,
+  useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
-// Discovery is a client-side DOM read. Run it after hydration,
-// not during component rendering.
-const headings = article == null ? [] : discoverHeadings(article);
-const outline = buildOutline(headings);
+// Discovery runs after commit, before paint — never during rendering:
+// renders rerun under StrictMode and concurrency and must depend only on
+// props and state, the scanned article does not exist during the nav's
+// render, and the server holds no document.
+const { headings } = useTocOutline(article);
 
 return (
-  <TocRoot targetIds={headings.map((heading) => heading.id)}>
+  <TocRoot headings={headings}>
     <TocList>
-      {/* You render the nesting from your own outline data. */}
-      {outline.map((group) => (
-        <TocItem key={group.id}>
-          <TocLink targetId={group.id}>{group.title}</TocLink>
-          {group.children.length > 0 && (
-            <TocList>
-              {/* deeper levels, same shape */}
-            </TocList>
-          )}
-        </TocItem>
-      ))}
+      {/* The function child maps the Root-owned outline; keys stay yours. */}
+      {(group) => <OutlineItemGroup key={group.id} group={group} />}
     </TocList>
   </TocRoot>
 );
+
+function OutlineItemGroup({ group }: { group: HeadingGroup }) {
+  return (
+    <TocItem>
+      <TocLink targetId={group.id}>{group.title}</TocLink>
+      {group.children.length > 0 && (
+        <TocList>
+          {/* deeper levels map your own group data */}
+          {group.children.map((child) => (
+            <OutlineItemGroup key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
+    </TocItem>
+  );
+}
+```
+
+The id-only `targetIds` lane stays for manual consumers: you own discovery, grouping, and the nesting yourself, and render the nesting from your own outline data:
+
+```tsx
+const headings = article == null ? [] : discoverHeadings(article);
+const outline = buildOutline(headings);
+
+<TocRoot targetIds={headings.map((heading) => heading.id)}>
+  <TocList>
+    {outline.map((group) => (
+      <TocItem key={group.id}>
+        <TocLink targetId={group.id}>{group.title}</TocLink>
+        {group.children.length > 0 && (
+          <TocList>
+            {/* deeper levels, same shape */}
+          </TocList>
+        )}
+      </TocItem>
+    ))}
+  </TocList>
+</TocRoot>
 ```
 
 Default rendering:
@@ -74,12 +104,13 @@ Default rendering:
 
 ## Outline utilities
 
-Two synchronous helpers come with the parts, and both are dispatched from the same file:
+Two synchronous helpers and one hook come with the parts, and all three are dispatched from the same file:
 
 - `discoverHeadings` reads a flat heading snapshot from the DOM.
 - `buildOutline` groups flat headings into a nested outline.
+- `useTocOutline` packages discovery and grouping into one client-side hook.
 
-Both helpers do not mutate their inputs or the document, and they return fresh values. They do not measure layout, so visually hidden headings are included. Neither helper runs during component rendering.
+The helpers do not mutate their inputs or the document, and they return fresh values. They do not measure layout, so visually hidden headings are included. Neither helper runs during component rendering.
 
 ### `discoverHeadings`
 
@@ -113,6 +144,19 @@ buildOutline([
 
 Every node carries `id`, `title`, `level`, and an always-present `children` array, so rendering needs no emptiness branching. `buildOutline` is the input boundary for consumer-supplied data: it throws for an invalid ID, a level outside `1`–`6`, an empty title, or a duplicate ID.
 
+### `useTocOutline`
+
+`useTocOutline(scope)` packages the above: it discovers the headings of `scope` in a layout effect — one client-side snapshot per scope identity — and returns `{ headings, outline }`, already grouped through `buildOutline`:
+
+```tsx
+const [article, setArticle] = useState<HTMLElement | null>(null);
+const { headings, outline } = useTocOutline(article);
+```
+
+A `null` or unmounted scope yields the empty pair. Scope is the only input, so a scope identity change is the only re-discovery trigger; content that mutates under the same element re-discovers itself (like the dynamic-targets playground variant). On the server, every render yields the empty pair, because layout effects never run there and no `document` read escapes the effect callbacks.
+
+The layout effect — not a render-time read — is deliberate: renders rerun under StrictMode and concurrency and must depend only on props and state; the scanned article usually renders in a sibling subtree that does not exist during the navigation's own render; and the server holds no `document`. The hook is that after-commit-before-paint slot, packaged.
+
 ## API reference
 
 ### Target IDs
@@ -127,7 +171,8 @@ The tracked navigation landmark. Renders a `<nav>` element.
 
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `targetIds` | `readonly string[]` | — | The ordered destination IDs. This collection alone is the source of truth for membership and order: mounted links never add, remove, reorder, or hide a target. Treat it as an immutable snapshot; replace the array to reconfigure. An empty collection is valid: trackers run, `currentId` is `null`, and the empty landmark is your decision. |
+| `targetIds` | `readonly string[]` | — | Ordered destination IDs — the `targetIds` lane. This collection alone is the source of truth for membership and order: mounted links never add, remove, reorder, or hide a target. Treat it as an immutable snapshot; replace the array to reconfigure. An empty collection is valid: trackers run, `currentId` is `null`, and the empty landmark is your decision. Mutually exclusive with `headings`: pass exactly one lane, or the render throws. |
+| `headings` | `readonly Heading[]` | — | Flat heading entries — the `headings` lane. `TocRoot` derives the tracked collection from the entry ids (same identity semantics as `targetIds`) and builds the outline through `buildOutline`; a `TocList` function child then maps it (see `TocList`). Immutable snapshot; replace the array to reconfigure. Mutually exclusive with `targetIds`. |
 | `scrollElement` | `Element \| null` | `undefined` | The tracked scrolling surface. Omit to track the document viewport. Passing the tracking document's root element is equivalent to omitting it: the root element is the viewport. Pass an element to track that scrollport. `null` deactivates tracking: `currentId` is `null`; this is not a fallback to the viewport. One `TocRoot` tracks one surface. |
 | `activationOffset` | `number` | `0` | CSS pixels below the surface top edge that count as "reached". Must be finite and non-negative. Tracking-only: coordinate with CSS `scroll-padding` and `scroll-margin` for navigation landings. |
 | `onCurrentChange` | `(currentId: string \| null) => void` | — | Change-only notification of the current target ID. Runs after commit, never during render. Replacing the callback identity does not re-notify the current value. |
@@ -151,12 +196,13 @@ type TocRootState = {
 Behavior:
 
 - `TocRoot` owns the tracker: measurement scheduling, coalescing, and change notifications.
-- `targetIds` and `activationOffset` are validated synchronously at render: an invalid or duplicate entry and a non-finite or negative offset throw an `Error`. Nothing is deduplicated, sorted, or rewritten.
+- Exactly one tracking lane is provided: `targetIds` alone, or `headings` alone; both or neither throws an `Error` at render. In the `targetIds` lane the entries are validated synchronously; in the `headings` lane `buildOutline` is the single validator for entry shapes. Nothing is deduplicated, sorted, or rewritten.
+- `activationOffset` is validated synchronously at render: a non-finite or negative offset throws an `Error`.
 - `refresh()` re-resolves targets and measures again. It coalesces like any other scheduled update; it does not force a synchronous render, does not scroll, and returns nothing.
 
 ### `TocList` and `TocItem`
 
-Structural composition parts. They render your children as-is.
+Structural composition parts. They render your children as-is:
 
 | | `TocList` | `TocItem` |
 | :--- | :--- | :--- |
@@ -165,6 +211,8 @@ Structural composition parts. They render your children as-is.
 | Attributes | `data-slot="toc-list"` | `data-slot="toc-item"` |
 
 The nested list structure is yours and mirrors your outline data; the tracked collection stays flat at any nesting depth. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
+
+`TocList` also accepts a function child `(group) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the outline `TocRoot` built from your `headings` prop and renders one callback element per top-level group — the mapping moves into the part, and keys stay yours. Function children throw under the `targetIds` lane, which owns no outline. Plain children render as-is in both lanes, and every level below the mapped one keeps mapping your own group data. Every `TocList` with function children maps the same top-level groups, so nest plain children below the mapped level.
 
 ### `TocLink`
 
@@ -222,7 +270,7 @@ A `render` replacement must produce an element that forwards the received props 
 
 The tracked surface has a top edge: the viewport's top edge in viewport mode, or the scroller's visible top edge in element mode. The activation line sits `activationOffset` pixels below that edge. A target whose top edge is above this line (distance less than or equal to the offset) has crossed.
 
-At each measurement, the current target is the **last crossed** target in `targetIds` order:
+At each measurement, the current target is the **last crossed** target in collection order (either lane):
 
 - Before the first crossing there is no current target. A document open above the content reports `null`, and "before the first crossing" means before crossing the activation line, not before entering view.
 - A large `activationOffset` can select a target below the fold: there is no clamp to the viewport height. A section stays current through the space after its heading, so the heading can be far offscreen.
@@ -240,7 +288,7 @@ Measurements resolve the configured IDs again and read current rectangles each t
 1. the first client commit after mount;
 2. a `scroll` of the tracked surface (document viewport, or the configured element);
 3. a layout-viewport `resize` (viewport mode), or a box resize of the configured element (`ResizeObserver`; a 0→size box transition also reactivates tracking, and a lost box deactivates it immediately);
-4. a committed change to `targetIds`, `scrollElement` identity, or `activationOffset`;
+4. a committed change to the tracking collection (either lane), `scrollElement` identity, or `activationOffset`;
 5. an explicit `refresh()` call through `actionsRef`.
 
 Documented gaps — with no trigger, not bugs:
@@ -256,7 +304,7 @@ A `TocLink`'s membership and the collection's validity throw synchronously at re
 
 These configuration changes publish `null` at once, with no wait for a measurement:
 
-- the current target is removed from `targetIds`, including by an emptied collection;
+- the current target is removed from the tracking collection, including by an emptied lane;
 - `scrollElement` becomes `null`, so tracking is inactive;
 - an element scroller with no usable layout box arrives or loses its box.
 
@@ -264,7 +312,7 @@ Other changes lag by design: after a commit, the next scheduled measurement deci
 
 ## Server rendering and StrictMode
 
-- The server render, the first client render, and an empty collection produce the same markup: `currentId` is `null`, with no loading placeholders and no automatic hiding of empty outlines. You can render the full nav, lists, items, and links on the server, because a link's `href` is a pure function of its `targetId`.
+- The server render, the first client render, and an empty collection produce the same markup: `currentId` is `null`, with no loading placeholders and no automatic hiding of empty outlines. You can render the full nav, lists, items, and links on the server, because a link's `href` is a pure function of its `targetId` — and the `headings` lane's function children map from prop data the server also holds.
 - Discovery is client-only and never runs in render. If your content depends on the discovered outline, produce matching server markup yourself, or render the navigation after hydration; the component does not reconcile the two.
 - After hydration, the first measurement can notify a change. The first measured `null` does not notify; the first measured non-null value does.
 - Under StrictMode, effects and callback refs replay, and cleanups cancel pending work. A replay can re-emit the first measured value on the new instance; nothing else notifies.
@@ -337,16 +385,16 @@ bun run playground:dev
 
 | Variant | Demonstrates | Checklist rows above |
 | :--- | :--- | :--- |
-| Document scroll | `discoverHeadings` over an article, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header | 1, 2, 9, 12 |
-| Embedded scroll area | hard-coded `buildOutline` data tracked in an element scrollport wired through callback-ref state | 4, 13 |
+| Document scroll | the `useTocOutline` snapshot into the `headings` lane, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header | 1, 2, 9, 12 |
+| Embedded scroll area | static `headings` data tracked in an element scrollport wired through callback-ref state | 4, 13 |
 | Custom render + events | `onCurrentChange`, `activationOffset` from a range input, a `TocLink` `render` prop, and `actionsRef` `refresh()` after a banner toggle | 2, 6, 14 |
-| Dynamic targets | `targetIds` commits after add and remove, and `display: none` targets that discovery still finds | 7, 8, 15 |
+| Dynamic targets | manual discovery into the `headings` lane after add and remove commits (the content mutates), and `display: none` targets that discovery still finds | 7, 8, 15 |
 
 Vite dev is a manual-verification venue for the checklist above: each variant exercises its listed rows in the shipped modes. The playground imports [src/table-of-contents.tsx](./src/table-of-contents.tsx) directly, and the library itself is not rebuilt for the playground; `vite build` compiles the same source the unit tests run against.
 
 ## Also exported
 
-The module also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the four parts and the two outline utilities.
+The module exports the four parts, the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
 
 ## Contributing
 

@@ -4,12 +4,10 @@ import {
   TocList,
   TocItem,
   TocLink,
-  buildOutline,
-  discoverHeadings,
-  type Heading,
+  useTocOutline,
+  type HeadingGroup,
   type TocActions,
 } from "../../../../src/table-of-contents";
-import type { HeadingGroup } from "../shared/toc-outline";
 import "./render-events.css";
 
 const ACTIVATION_OFFSET_MIN_PX = 0;
@@ -20,23 +18,16 @@ const FILLER_PARAGRAPH =
   "These rows exist so scrolling moves several headings past the activation line while the controls run.";
 
 export function RenderEvents() {
-  const articleRef = React.useRef<HTMLElement | null>(null);
+  const [article, setArticle] = React.useState<HTMLElement | null>(null);
   const actionsRef = React.useRef<TocActions | null>(null);
-  const [headings, setHeadings] = React.useState<readonly Heading[]>([]);
   const [currentId, setCurrentId] = React.useState<string | null>(null);
   const [activationOffsetPx, setActivationOffsetPx] = React.useState(ACTIVATION_OFFSET_MIN_PX);
   const [isBannerMounted, setIsBannerMounted] = React.useState(false);
 
-  // Same discovery contract as docs-sidebar: a DOM read after mount.
-  React.useLayoutEffect(() => {
-    const article = articleRef.current;
-    if (article === null) {
-      return;
-    }
-    setHeadings(discoverHeadings(article));
-  }, []);
-
-  const outline = buildOutline(headings);
+  // The article is a mount-time snapshot: the hook discovers once per
+  // article identity, and mounting the banner (a sibling) does not remount
+  // it. refresh() re-measures without re-discovery (README §Server rendering).
+  const { headings } = useTocOutline(article);
 
   return (
     <div className="pg-rv">
@@ -66,16 +57,14 @@ export function RenderEvents() {
           </p>
         </div>
         <TocRoot
-          targetIds={headings.map((heading) => heading.id)}
+          headings={headings}
           activationOffset={activationOffsetPx}
           onCurrentChange={handleCurrentChange}
           actionsRef={actionsRef}
           className="pg-rv-nav"
         >
           <TocList>
-            {outline.map((group) => (
-              <EventOutlineItem key={group.id} group={group} />
-            ))}
+            {(group) => <EventOutlineItem key={group.id} group={group} />}
           </TocList>
         </TocRoot>
         <p className="pg-rv-note">
@@ -86,7 +75,7 @@ export function RenderEvents() {
       </aside>
       <div className="pg-rv-main">
         {isBannerMounted && <Banner />}
-        <article className="pg-rv-article" ref={articleRef}>
+        <article className="pg-rv-article" ref={setArticle}>
           <section>
             <h2 id="session">Session</h2>
             <FillerParagraphs count={3} />
@@ -136,7 +125,8 @@ export function RenderEvents() {
 }
 
 // A custom renderer: the part merges href, aria-current, and data-* into the
-// props, this element spreads them, and the state prefix is a marker.
+// props, this element spreads them, and the state prefix is a marker. The
+// prefix renders per link, so both outline levels show it.
 function EventOutlineItem({ group }: { group: HeadingGroup }) {
   return (
     <TocItem>
@@ -154,11 +144,13 @@ function EventOutlineItem({ group }: { group: HeadingGroup }) {
       >
         {group.title}
       </TocLink>
-      <TocList>
-        {group.children.map((child) => (
-          <EventOutlineItem key={child.id} group={child} />
-        ))}
-      </TocList>
+      {group.children.length > 0 && (
+        <TocList>
+          {group.children.map((child) => (
+            <EventOutlineItem key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
     </TocItem>
   );
 }

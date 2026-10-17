@@ -7,10 +7,13 @@ import {
   isValidActivationOffset,
   isValidTargetId,
   parseTargetCollection,
+  parseTrackingSource,
   selectCurrentTargetId,
+  useTocOutline,
   type TocGeometrySample,
   type TocTargetGeometry,
   type Heading,
+  type HeadingGroup,
   type TocLinkProps,
   TocItem,
   TocLink,
@@ -310,6 +313,71 @@ describe("buildOutline", () => {
   });
 });
 
+describe("parseTrackingSource", () => {
+  const parse = (props: {
+    targetIds?: readonly string[] | undefined;
+    headings?: readonly Heading[] | undefined;
+  }) => () => parseTrackingSource(props);
+
+  test("throws when both lanes are provided", () => {
+    expect(parse({ targetIds: ["intro"], headings: [heading("intro", 2, "Intro")] })).toThrow();
+  });
+
+  test("throws when neither lane is provided", () => {
+    expect(parse({})).toThrow();
+    expect(parse({ targetIds: undefined, headings: undefined })).toThrow();
+  });
+
+  test("parses the targetIds lane and adds no outline", () => {
+    const source = parseTrackingSource({ targetIds: ["intro", "faq"], headings: undefined });
+
+    expect(source).toEqual({ lane: "targetIds", targetIds: ["intro", "faq"] });
+    expect("outline" in source).toBe(false);
+  });
+
+  test("the targetIds lane keeps the collection boundary errors", () => {
+    expect(parse({ targetIds: ["sp ace"] })).toThrow();
+    expect(parse({ targetIds: ["intro", "intro"] })).toThrow();
+  });
+
+  test("derives the headings lane from built outline entries", () => {
+    const entries = [heading("intro", 2, "Intro"), heading("setup", 3, "Setup")];
+    const source = parseTrackingSource({ targetIds: undefined, headings: entries });
+
+    expect(source).toEqual({
+      lane: "headings",
+      targetIds: ["intro", "setup"],
+      outline: [
+        { ...heading("intro", 2, "Intro"), children: [{ ...heading("setup", 3, "Setup"), children: [] }] },
+      ],
+    });
+  });
+
+  test("an empty headings list is a valid lane with an empty outline", () => {
+    expect(parseTrackingSource({ targetIds: undefined, headings: [] })).toEqual({
+      lane: "headings",
+      targetIds: [],
+      outline: [],
+    });
+  });
+
+  test("the headings lane validates through buildOutline only", () => {
+    // Invalid entry shapes and duplicates surface from the outline boundary.
+    expect(parse({ headings: [heading("sp ace", 2, "Ok")] })).toThrow();
+    expect(parse({ headings: [heading("dup", 2, "Dup"), heading("dup", 3, "Dup again")] })).toThrow();
+    expect(parse({ headings: [{ ...heading("ok", 2, "Ok"), level: 0 } as unknown as Heading] })).toThrow();
+  });
+
+  test("the derived collection and outline are fresh, not aliases of the input", () => {
+    const entries = [heading("one", 2, "One")] as readonly Heading[];
+    const source = parseTrackingSource({ headings: entries });
+
+    if (source.lane !== "headings") throw new Error("unreachable: one lane was provided");
+    expect(source.targetIds).not.toBe(entries);
+    expect(source.outline[0]).not.toBe(entries[0]);
+  });
+});
+
 describe("SSR smoke", () => {
   test("renders links with derived hrefs and no current marking on the server", () => {
     const markup = renderToStaticMarkup(
@@ -370,6 +438,18 @@ describe("SSR render boundaries", () => {
 
   test("throws at the Root for a duplicate targetIds entry", () => {
     expect(() => renderToStaticMarkup(React.createElement(TocRoot, { targetIds: ["intro", "intro"] }))).toThrow();
+  });
+
+  test("throws at the Root when both tracking lanes are provided", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        React.createElement(TocRoot, { targetIds: ["intro"], headings: [heading("intro", 2, "Intro")] }),
+      ),
+    ).toThrow();
+  });
+
+  test("throws at the Root when no tracking lane is provided", () => {
+    expect(() => renderToStaticMarkup(React.createElement(TocRoot, {}))).toThrow();
   });
 
   test("throws at the Root for a non-finite or negative activationOffset", () => {
@@ -435,5 +515,104 @@ describe("SSR render boundaries", () => {
     );
     expect(markup).toContain(`aria-label="Consumer label"`);
     expect(markup).not.toContain(`aria-label="Table of contents"`);
+  });
+});
+
+const LANE_HEADINGS: readonly Heading[] = [
+  heading("intro", 2, "Intro"),
+  heading("cookbook", 3, "Cookbook"),
+];
+
+const laneEntries = () =>
+  // Flat presentation entries: one keyed item per heading, as consumers map.
+  LANE_HEADINGS.map((entry) =>
+    React.createElement(
+      TocItem,
+      { key: entry.id },
+      React.createElement(TocLink, { targetId: entry.id }, entry.title),
+    ),
+  );
+
+describe("SSR headings lane", () => {
+  test("renders the same hrefs as the derived targetIds lane", () => {
+    const headingsMarkup = renderToStaticMarkup(
+      React.createElement(TocRoot, { headings: LANE_HEADINGS }, laneEntries()),
+    );
+    const targetIdsMarkup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { targetIds: LANE_HEADINGS.map((entry) => entry.id) },
+        laneEntries(),
+      ),
+    );
+
+    // The lane is invisible in markup: identical hrefs, slots, and label.
+    expect(headingsMarkup).toBe(targetIdsMarkup);
+    expect(headingsMarkup).toContain(`href="#intro"`);
+    expect(headingsMarkup).toContain('href="#cookbook"');
+  });
+
+  test("renders an empty headings list as an empty landmark", () => {
+    const markup = renderToStaticMarkup(React.createElement(TocRoot, { headings: [] }));
+
+    expect(markup).toContain(`data-slot="toc-root"`);
+    expect(markup).toContain(`aria-label="Table of contents"`);
+    expect(markup).not.toContain("href=");
+  });
+});
+
+describe("SSR TocList function children", () => {
+  test("maps the Root-owned outline onto the list items", () => {
+    const itemForGroup = (group: HeadingGroup): React.ReactElement =>
+      React.createElement(
+        TocItem,
+        { key: group.id },
+        React.createElement(TocLink, { targetId: group.id }, group.title),
+        React.createElement(
+          TocList,
+          null,
+          group.children.map((child) => itemForGroup(child)),
+        ),
+      );
+
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: LANE_HEADINGS },
+        React.createElement(TocList, { children: itemForGroup }),
+      ),
+    );
+
+    // The function child runs once per top-level group; nested groups map
+    // through the consumer recursion with consumer-authored keys.
+    expect(markup).toContain('href="#intro"');
+    expect(markup).toContain("Intro");
+    expect(markup).toContain('href="#cookbook"');
+    expect(markup).toContain("Cookbook");
+    expect(markup).toContain(`data-slot="toc-list"`);
+    expect(markup).toContain(`data-slot="toc-item"`);
+  });
+
+  test("throw in the targetIds lane, which owns no outline", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        React.createElement(
+          TocRoot,
+          { targetIds: ["intro"] },
+          React.createElement(TocList, { children: (group: HeadingGroup) => group.id }),
+        ),
+      ),
+    ).toThrow();
+  });
+});
+
+describe("useTocOutline SSR", () => {
+  test("returns the empty headings/outline pair on a null scope", () => {
+    const probe = () => {
+      const { headings, outline } = useTocOutline(null);
+      return React.createElement("span", null, `${headings.length}:${outline.length}`);
+    };
+
+    expect(renderToStaticMarkup(React.createElement(probe))).toContain(">0:0<");
   });
 });

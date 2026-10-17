@@ -54,6 +54,7 @@ Each omission is deliberate. A consumer can compose them outside the core; the c
 - Membership and order come from the collection alone. Mounted Links never add, remove, reorder, or hide a target. One `TocRoot` may render several presentations (text outline, rail, subsets) whose links all point into the same collection; mounting, hiding, or unmounting a presentation does not change what is tracked.
 - The collection may be empty. An empty collection is valid: trackers run, `currentId` is `null`, and the consumer decides whether an empty landmark renders (§8.3, §12).
 - Consumers treat inputs as immutable snapshots: reconfigure by replacing the array or entry objects, never by mutating values in place. `refresh()` reschedules DOM measurement; it does not promise support for mutated props.
+- In the `headings` lane (§8.3) the flat collection derives from the `headings` entry ids inside `TocRoot`; it is the authoritative collection under the same identity semantics: it changes only when the `headings` array identity changes.
 
 ### 4.2 Valid target ID
 
@@ -163,25 +164,29 @@ Scheduled work is coalesced (at most once per animation frame). Reads happen bef
 ```tsx
 import {
   TocRoot, TocList, TocItem, TocLink,
-  discoverHeadings, buildOutline,
+  useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
-const headings = article ? discoverHeadings(article) : [];
+const { headings } = useTocOutline(article); // §9.3
 
-<TocRoot targetIds={headings.map((heading) => heading.id)}>
+<TocRoot headings={headings}>
   <TocList>
-    {/* the consumer renders nesting from their own data */}
-    {outline.map((group) => (
+    {/* function children map the Root-owned outline; keys stay consumer-authored */}
+    {(group) => (
       <TocItem key={group.id}>
         <TocLink targetId={group.id}>{group.title}</TocLink>
         {group.children.length > 0 && (
-          <TocList>…</TocList>
+          <TocList>
+            {/* deeper levels map the consumer's own group data */}
+          </TocList>
         )}
       </TocItem>
-    ))}
+    )}
   </TocList>
 </TocRoot>
 ```
+
+The manual `targetIds` lane (§4.1) stays for consumers who own discovery and mapping themselves.
 
 Default rendering:
 
@@ -210,7 +215,8 @@ Consumers who replace the element through `render` own preserving semantics: the
 
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `targetIds` | `readonly string[]` | — | Ordered destination IDs (§4.1–§4.3). Immutable snapshot; replace to reconfigure. |
+| `targetIds` | `readonly string[]` | — | Ordered destination IDs (§4.1–§4.3) — the `targetIds` lane. Mutually exclusive with `headings`: exactly one lane is provided (§10). Immutable snapshot; replace to reconfigure. |
+| `headings` | `readonly Heading[]` | — | Flat heading entries (§9.1) — the `headings` lane. Mutually exclusive with `targetIds` (§10). Root derives the flat collection from the entry ids (§4.1) and builds the outline through `buildOutline` (§9.2). |
 | `scrollElement` | `Element \| null` | undefined | The tracked scrolling surface. Omit for the document viewport; `null` deactivates tracking. |
 | `activationOffset` | `number` | `0` | CSS pixels below the surface top edge that count as "reached". Finite and non-negative; otherwise an error. Tracking-only: coordinate with CSS `scroll-padding`/`scroll-margin` for navigation landings. |
 | `onCurrentChange` | `(currentId: string \| null) => void` | — | Change-only notification of the current target ID (§7). |
@@ -232,7 +238,9 @@ Structural composition parts with no distinguishing state.
 | state | `{}` (empty; function forms accepted for uniformity only) |
 | attributes | `data-slot="toc-list"` / `data-slot="toc-item"` |
 
-They render consumer-authored children as-is. Nesting is the consumer's list structure, mirroring the outline data; the tracking collection stays flat regardless of nesting depth.
+They render consumer-authored children as-is. Nesting below the mapped level is the consumer's list structure, mirroring the outline data; the tracking collection stays flat regardless of nesting depth.
+
+`TocList` also accepts function children `(group: HeadingGroup) => React.ReactNode`, modeled on `Select.Value`: the part reads the Root context and renders `outline.map((group) => children(group))` into the `<ol>` — one callback element per top-level group, with keys consumer-authored. Function children require the Root to own an outline: in the `targetIds` lane the Root builds none and `TocList` throws (§10). Plain children render as-is in both lanes; every `TocList` given function children maps the same root outline, so deeper levels keep mapping the consumer's own group data with plain children.
 
 ### 8.5 TocLink
 
@@ -253,7 +261,7 @@ Hover/focus inspection, previews, panels, tick magnification, and disclosure sta
 
 ## 9. Outline utilities
 
-Both utilities are explicit, synchronous, DOM-reading or value-only helpers, exported from the same file as the parts. They never run during component rendering (§12), never mutate their inputs or the document, and return fresh values.
+The two utilities are explicit, synchronous, DOM-reading or value-only helpers, exported from the same file as the parts, and the hook (§9.3) packages the client-side discovery slot they document. No utility runs during component rendering (§12), none mutates its inputs or the document, and they return fresh values.
 
 ### 9.1 `discoverHeadings`
 
@@ -294,6 +302,20 @@ declare function buildOutline(headings: readonly Heading[]): readonly HeadingGro
 
 The output renders however the consumer likes; no part of the tracker consumes `HeadingGroup`.
 
+### 9.3 `useTocOutline`
+
+```ts
+declare function useTocOutline(scope: Element | null): {
+  headings: readonly Heading[];
+  outline: readonly HeadingGroup[];
+};
+```
+
+- **Role:** the consumer hook packages the "after-commit-before-paint" discovery slot: one layout-effect snapshot of `scope` per scope identity (§9.1), grouped through `buildOutline` (§9.2). A `null` or unmounted scope yields the empty pair.
+- **Snapshot contract:** the hook runs one discovery per scope identity; it does not watch the DOM. Content that mutates under the same element needs an explicit re-discovery outside the hook (§9.1). Scope is the only input — no options parameter, because an options object changes identity per render and would re-discover forever.
+- **SSR:** every server render yields the empty pair: layout effects never run in `react-dom/server`, and the module reads no `document` outside effect callbacks (§12).
+- **Why not during rendering (§12):** renders rerun and are discarded under StrictMode and concurrent rendering, so their output must depend only on props and state; the scanned article is usually a sibling subtree that does not exist during the navigation's render (commit ordering); and the server holds no `document`. The layout effect is that slot, packaged here.
+
 ## 10. Error contract
 
 All errors are synchronous `Error` throws at the owning boundary; error **message wording is not a public contract** (no error classes or codes in the initial version — YAGNI). Throw sites:
@@ -301,13 +323,15 @@ All errors are synchronous `Error` throws at the owning boundary; error **messag
 | Error | Thrown at |
 | :--- | :--- |
 | invalid or repeated entry in `targetIds` | Root render commit (§4.3) |
+| no tracking lane or both lanes on a Root (`targetIds` and `headings` together, or neither) | Root render commit (§4.3) |
 | invalid `targetId` on a Link | Link render |
 | Link outside a Root / `targetId` not in collection | Link render |
 | non-finite or negative `activationOffset` | Root render commit |
 | element-mode target resolving outside its scroller | measurement effect (§5, §7) |
 | discovery: missing/invalid ID, duplicate ID, empty title | `discoverHeadings` call |
 | discovery: invalid `levels` values | `discoverHeadings` call |
-| outline: invalid entry shape or duplicate ID | `buildOutline` call |
+| outline: invalid entry shape or duplicate ID | the `buildOutline` call, directly or through TocRoot's `headings` lane (§9.2) |
+| `TocList` function children without a Root-owned outline (`targetIds` lane) | List render (§8.4) |
 
 Nothing is silenced, deduplicated away, or auto-repaired: an invalid collection is a programming error (§2), while temporarily missing nodes are legitimate state (§4.6).
 
@@ -418,3 +442,4 @@ Compressed record of the interview, for traceability. R1–R6 = rounds; Q number
 | Server | Normal rendering, `null` initial; empty states consumer-owned (R5 Q44) |
 | Close-out (adopted recommendations) | Fragment-alias and `<base>` preconditions (§4.4/13); one-current-link-per-landmark authoring rule; immediate-null transition rule (§4.5); builder rules and always-present `children` (§9.2); plain `Error`, non-normative messages (§10); immutable-input contract (§4.1) |
 | Close-out (R7 revision) | React 19 ref-as-prop delivery of `ref`; parts compose through published-internals `useRenderElement`; parse-don't-validate boundaries (`parseTargetCollection`, `parseActivationOffset`, `parseOutlineHeadings`); definition order follows one stated rule |
+| Outline data lane (R8) | Consumer hook `useTocOutline` (one snapshot per scope identity, SSR-empty); `TocRoot` lanes `targetIds`/`headings`, mutually exclusive; `TocList` function children over the root-context outline, `Select.Value`-modeled; playground simplified to per-variant helpers |

@@ -1,11 +1,13 @@
 import * as React from "react";
 import {
   TocRoot,
-  buildOutline,
+  TocList,
+  TocItem,
+  TocLink,
   discoverHeadings,
   type Heading,
+  type HeadingGroup,
 } from "../../../../src/table-of-contents";
-import { TocOutline } from "../shared/toc-outline";
 import "./dynamic-targets.css";
 
 interface TargetSection {
@@ -42,6 +44,9 @@ export function DynamicTargets() {
 
   // Discovery re-runs per committed collection change; the hidden class does
   // not change the snapshot, because hidden headings are still discovered.
+  // Manual discovery stays here: the section content mutates under the same
+  // article element, and the snapshot hook re-discovers only on a scope
+  // identity change (README §Server rendering).
   React.useLayoutEffect(() => {
     const article = articleRef.current;
     if (article === null) {
@@ -49,8 +54,6 @@ export function DynamicTargets() {
     }
     setHeadings(discoverHeadings(article));
   }, [targetSections]);
-
-  const outline = buildOutline(headings);
 
   return (
     <div className="pg-dt">
@@ -60,11 +63,10 @@ export function DynamicTargets() {
           <button type="button" onClick={handleRemoveLastSection}>Remove last</button>
           <button type="button" onClick={handleToggleHidden}>Toggle hidden</button>
         </div>
-        <TocRoot
-          targetIds={headings.map((heading) => heading.id)}
-          className="pg-dt-nav"
-        >
-          <TocOutline outline={outline} />
+        <TocRoot headings={headings} className="pg-dt-nav">
+          <TocList>
+            {(group) => <DynamicOutlineItemGroup key={group.id} group={group} />}
+          </TocList>
         </TocRoot>
         <p className="pg-dt-note">
           The hidden section keeps its heading in the DOM, so it stays in the
@@ -114,4 +116,22 @@ export function DynamicTargets() {
       currentHiddenId === HIDDEN_SECTION_ID ? null : HIDDEN_SECTION_ID,
     );
   }
+}
+
+// The local outline renderer: one item per group; the top-level list maps
+// through `TocList` function children, and each deeper level maps the group's
+// children from the outline data the consumer recurses over.
+function DynamicOutlineItemGroup({ group }: { group: HeadingGroup }) {
+  return (
+    <TocItem>
+      <TocLink targetId={group.id}>{group.title}</TocLink>
+      {group.children.length > 0 && (
+        <TocList>
+          {group.children.map((child) => (
+            <DynamicOutlineItemGroup key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
+    </TocItem>
+  );
 }
