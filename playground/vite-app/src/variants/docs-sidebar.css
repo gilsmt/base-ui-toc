@@ -1,0 +1,86 @@
+/* Document viewport mode: the page scrolls, the sidebar follows. */
+
+.pg-docs {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+/* Sticky under the playground header. */
+.pg-docs-sidebar {
+  position: sticky;
+  top: var(--pg-header-height);
+}
+
+/* Plain outline typography; the parts render unstyled structure. */
+.pg-docs-nav ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-docs-nav ol ol {
+  padding-left: 1rem;
+}
+
+.pg-docs-nav a {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.pg-docs-nav a:hover {
+  background: var(--pg-accent-background);
+}
+
+/* The current marker arrives through the data attribute the link renders. */
+.pg-docs-nav a[data-current] {
+  color: var(--pg-accent);
+  font-weight: 600;
+}
+
+.pg-docs-article {
+  background: var(--pg-surface);
+  border: 1px solid var(--pg-border);
+  border-radius: 0.5rem;
+  padding: 1.5rem 2rem 4rem;
+}
+
+.pg-docs-article h2 {
+  margin: 2.5rem 0 0.75rem;
+  font-size: 1.5rem;
+}
+
+.pg-docs-article h3 {
+  margin: 2rem 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+.pg-docs-article h4 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.pg-docs-article p {
+  max-width: 65ch;
+  margin: 0 0 0.75rem;
+}
+
+/* Fragment landings clear the sticky header: the value pairs with
+   --pg-header-height, the same offset the sidebar uses to stick. */
+.pg-docs-article :is(h2, h3, h4) {
+  scroll-margin-top: var(--pg-header-height);
+}
+
+@media (max-width: 48rem) {
+  .pg-docs {
+    grid-template-columns: 1fr;
+  }
+
+  .pg-docs-sidebar {
+    position: static;
+  }
+}

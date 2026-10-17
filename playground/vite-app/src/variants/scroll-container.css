@@ -1,0 +1,87 @@
+/* Element scroller mode: the fixed-height box scrolls, the page does not. */
+
+.pg-scroll {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.pg-scroll-sidebar {
+  position: sticky;
+  top: var(--pg-header-height);
+}
+
+/* Current target highlight through the link's data attribute. */
+.pg-scroll-nav ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-scroll-nav ol ol {
+  padding-left: 1rem;
+}
+
+.pg-scroll-nav a {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.pg-scroll-nav a[data-current] {
+  color: var(--pg-accent);
+}
+
+.pg-scroll-view {
+  height: 22rem;
+  overflow: auto;
+  background: var(--pg-surface);
+  border: 1px solid var(--pg-border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.5rem 2.5rem;
+}
+
+.pg-scroll-section h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.pg-scroll-section h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.pg-scroll-section h4 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.925rem;
+}
+
+.pg-scroll-section:hover {
+  outline: 1px dashed var(--pg-border);
+  outline-offset: 4px;
+}
+
+.pg-scroll-section {
+  padding: 0.25rem 0.75rem 1.75rem;
+  border-bottom: 1px solid var(--pg-border);
+}
+
+.pg-scroll-section p {
+  margin: 0.25rem 0 0;
+}
+
+/* Space after the last heading lets the bottom exception reach the box. */
+.pg-scroll-end {
+  padding: 1.5rem 0.75rem;
+  color: var(--pg-text-muted);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 48rem) {
+  .pg-scroll {
+    grid-template-columns: 1fr;
+  }
+}

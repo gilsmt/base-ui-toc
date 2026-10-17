@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        /* Base options: one app, no project references. */
+        "target": "esnext",
+        "moduleDetection": "force",
+        "lib": ["dom", "dom.iterable", "ESNext"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "resolvePackageJsonExports": true,
+        "types": ["vite/client", "react", "react-dom"],
+
+        /* Strictness: the core flags of the root tsconfig. */
+        "strict": true,
+        "exactOptionalPropertyTypes": true,
+        "erasableSyntaxOnly": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noUncheckedSideEffectImports": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitReturns": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "jsx": "react-jsx",
+
+        /* The playground emits nothing: type-check and bundling stay separate. */
+        "noEmit": true
+    },
+    "include": ["src"]
+}

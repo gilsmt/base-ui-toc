@@ -326,6 +326,24 @@ Run this checklist in current Chrome, Firefox, and Safari, in viewport and eleme
 15. An empty collection renders an empty landmark with `currentId = null`; consumer empty-state styling applies.
 16. RTL article text: tracking and navigation behave identically (vertical geometry is unaffected).
 
+## Playground
+
+`playground/vite-app` is a small Vite app with four worked use cases of the parts. The dev server runs from the repository root:
+
+```bash
+bun install
+bun run playground:dev
+```
+
+| Variant | Demonstrates | Checklist rows above |
+| :--- | :--- | :--- |
+| Document scroll | `discoverHeadings` over an article, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header | 1, 2, 9, 12 |
+| Embedded scroll area | hard-coded `buildOutline` data tracked in an element scrollport wired through callback-ref state | 4, 13 |
+| Custom render + events | `onCurrentChange`, `activationOffset` from a range input, a `TocLink` `render` prop, and `actionsRef` `refresh()` after a banner toggle | 2, 6, 14 |
+| Dynamic targets | `targetIds` commits after add and remove, and `display: none` targets that discovery still finds | 7, 8, 15 |
+
+Vite dev is a manual-verification venue for the checklist above: each variant exercises its listed rows in the shipped modes. The playground imports [src/table-of-contents.tsx](./src/table-of-contents.tsx) directly, and the library itself is not rebuilt for the playground; `vite build` compiles the same source the unit tests run against.
+
 ## Also exported
 
 The module also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the four parts and the two outline utilities.
