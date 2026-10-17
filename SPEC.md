@@ -77,7 +77,7 @@ The component does not deduplicate, sort, or rewrite the collection, and it does
 
 ### 4.4 Link identity
 
-- `TocLink` takes one canonical prop `targetId: string` and derives the fragment destination from it. Link does not parse `href` and does not accept `href` or `aria-current` from consumers; those props are component-owned (§8.5). TypeScript prevents the conflict for typed consumers; at runtime the component-owned values win.
+- `TocLink` takes one canonical prop `targetId: string` and derives the fragment destination from it. Link does not parse `href` and does not accept `href` or `aria-current` from consumers; those props are component-owned (§8.6). TypeScript prevents the conflict for typed consumers; at runtime the component-owned values win.
 - Membership: a Link whose `targetId` is absent from its root's collection is a configuration error. Rendering any subset of the collection is fine, and several Links may share one configured target. A destination outside the collection means the element should use an ordinary anchor instead.
 - **Authoring constraint (not enforced):** within one rendered navigation landmark, render at most one Link per target, so a single set never contains two `aria-current="location"` elements. Separate `TocRoot` instances may each link the same document targets.
 
@@ -163,25 +163,17 @@ Scheduled work is coalesced (at most once per animation frame). Reads happen bef
 
 ```tsx
 import {
-  TocRoot, TocList, TocItem, TocLink,
+  TocRoot, TocList, TocItem, TocLink, TocGroup,
   useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
 const { headings } = useTocOutline(article); // §9.3
 
+// The fast lane: the function child maps the Root-owned outline, and
+// TocGroup renders one subtree — item, link, and the recursion below it.
 <TocRoot headings={headings}>
   <TocList>
-    {/* function children map the Root-owned outline; keys stay consumer-authored */}
-    {(group) => (
-      <TocItem key={group.id}>
-        <TocLink targetId={group.id}>{group.title}</TocLink>
-        {group.children.length > 0 && (
-          <TocList>
-            {/* deeper levels map the consumer's own group data */}
-          </TocList>
-        )}
-      </TocItem>
-    )}
+    {(group) => <TocGroup key={group.id} group={group} />}
   </TocList>
 </TocRoot>
 ```
@@ -196,6 +188,7 @@ Default rendering:
 | `TocList` | `<ol>` | — |
 | `TocItem` | `<li>` | — |
 | `TocLink` | `<a>` | `aria-current="location"` when current |
+| `TocGroup` | — | composite (`<li>` + `<a>` + nested `<ol>`): renders one `HeadingGroup` subtree; the nested list only when children exist |
 
 ### 8.2 Shared composition interface
 
@@ -207,7 +200,7 @@ Every part exposes the same Base UI composition surface:
 - `ref` forwards to the rendered element (never to an actions object);
 - all native props of the default element are accepted and merged, with consumer handlers running first.
 
-State per part is minimal (§8.3, §8.5). `TocList` and `TocItem` have an **empty** state object; their function forms of `className`/`style` are accepted for interface uniformity only.
+State per part is minimal (§8.3, §8.6). `TocList` and `TocItem` have an **empty** state object; their function forms of `className`/`style` are accepted for interface uniformity only.
 
 Consumers who replace the element through `render` own preserving semantics: they must produce an element that forwards the received props and ref to its DOM node (handbook contract). For `TocLink` specifically, §13.4 applies.
 
@@ -238,11 +231,25 @@ Structural composition parts with no distinguishing state.
 | state | `{}` (empty; function forms accepted for uniformity only) |
 | attributes | `data-slot="toc-list"` / `data-slot="toc-item"` |
 
-They render consumer-authored children as-is. Nesting below the mapped level is the consumer's list structure, mirroring the outline data; the tracking collection stays flat regardless of nesting depth.
+They render consumer-authored children as-is. The nesting composes in one of two lanes: `TocGroup` recursion (§8.5) is the default, and consumer-authored list structure takes over at any level that needs custom nodes; the tracking collection stays flat regardless of nesting depth.
 
-`TocList` also accepts function children `(group: HeadingGroup) => React.ReactNode`, modeled on `Select.Value`: the part reads the Root context and renders `outline.map((group) => children(group))` into the `<ol>` — one callback element per top-level group, with keys consumer-authored. Function children require the Root to own an outline: in the `targetIds` lane the Root builds none and `TocList` throws (§10). Plain children render as-is in both lanes; every `TocList` given function children maps the same root outline, so deeper levels keep mapping the consumer's own group data with plain children.
+`TocList` also accepts function children `(group: HeadingGroup) => React.ReactNode`, modeled on `Select.Value`: the part reads the Root context and renders `outline.map((group) => children(group))` into the `<ol>` — one callback element per top-level group, with keys consumer-authored. Function children require the Root to own an outline: in the `targetIds` lane the Root builds none and `TocList` throws (§10). Plain children render as-is in both lanes; every `TocList` given function children maps the same root outline, so deeper levels render from the group data the callback receives — through `TocGroup` children (§8.5) or the consumer's own plain children.
 
-### 8.5 TocLink
+### 8.5 TocGroup
+
+The composite part that owns the outline→JSX recursion: one `HeadingGroup` in (§9.2), one rendered subtree out. It has no host element of its own and no state, and it exposes no composition surface — §8.2 does not apply.
+
+| Prop | Value |
+| :--- | :--- |
+| `group` | The one `HeadingGroup` to render |
+
+**Contract:** renders `TocItem` > `TocLink` carrying `{group.title}`, plus a nested `TocList` of one `TocGroup` per child **only when `group.children` is non-empty**. The empty-`<ol>` guard is the part's rule: a childless group leaves no invalid list. The recursion keys itself from `child.id` inside the part; the consumer keys only the top-level `TocGroup` in a `TocList` function child (§8.4).
+
+**No slot props:** a level that needs custom nodes — a custom link render, extra markup — bypasses `TocGroup` at that level and composes `TocList`/`TocItem`/`TocLink` directly (§13.4).
+
+**Lanes:** the part reads no context itself — `TocItem`/`TocLink`/`TocList` own their context contracts — so it renders in both Root lanes wherever its `TocList`/`TocLink` ancestors are legal. The canonical pairing is `<TocList>{(group) => <TocGroup key={group.id} group={group} />}</TocList>`.
+
+### 8.6 TocLink
 
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -255,7 +262,7 @@ They render consumer-authored children as-is. Nesting below the mapped level is 
 
 A Link must render inside a `TocRoot`; rendering one outside is an error. Regular anchors are always available for destinations outside the collection.
 
-### 8.6 Inspection and adjacent UI
+### 8.7 Inspection and adjacent UI
 
 Hover/focus inspection, previews, panels, tick magnification, and disclosure state are **consumer-owned**. The component forwards events and refs; it owns no inspection state, no preview-open state, and no hover-selection. Two presentations under one root inspect independently. Base UI preview/tooltip primitives compose naturally for previews. Inspecting an entry never changes the document's current location, and navigating never changes inspection.
 
@@ -300,7 +307,7 @@ declare function buildOutline(headings: readonly Heading[]): readonly HeadingGro
 - **Output shape:** every node carries `{ id, title, level, children }`; `children` is always present (an empty array when there are none), so consumers need no emptiness branching.
 - **Purity:** fresh arrays and objects; the input is neither referenced nor mutated afterwards (values are copied in).
 
-The output renders however the consumer likes; no part of the tracker consumes `HeadingGroup`.
+The output renders however the consumer likes — through `TocGroup` (§8.5) by default or consumer-authored composition; no part of the tracker consumes `HeadingGroup`.
 
 ### 9.3 `useTocOutline`
 
@@ -375,7 +382,7 @@ A `render` replacement for `TocLink` must produce an element that natively activ
 
 - Own the target collection and its order; keep IDs valid and unique; treat inputs as immutable.
 - Call `refresh()` after content changes that no scheduled event covers (§7).
-- Own presentation: styles, nesting, inspection state, previews, disclosures, animations, empty states.
+- Own presentation: styles, inspection state, previews, disclosures, animations, empty states; `TocGroup` renders the outline nesting by default (§8.5), and the consumer nests any level that bypasses it.
 - Coordinate `activationOffset` with CSS scroll offsets when a landing position must correspond to a crossing.
 - Honor the authoring constraints in §4.4 and §13.
 - Verify assistive-technology behavior manually (§15).
@@ -406,7 +413,7 @@ Run in current Chrome, Firefox, and Safari, viewport and element-scroller modes:
 Deliverables, in order, all constrained by AGENTS.md (co-location, strict types, no premature abstraction):
 
 1. **`src/table-of-contents.tsx`** — the entire product in one file: constants (`UPPER_SNAKE_CASE`), types, ID/level validation, the pure selection step (§6) expressed over an injected geometry sample, the tracker (resolution, measurement, scheduling, notifications) as a Root-owned hook + context, the four parts via `useRender`/`mergeProps`, and the two utilities. The pure functions must be unit-testable without a DOM.
-2. **`test/*.test.ts(x)`** — `bun:test` units for: ID validation (whitespace, empty, surrogates), collection duplicate detection, the crossing rule and bottom exception over synthetic geometries (including equal tops and non-monotone order), `activationOffset` validation, `buildOutline` grouping and validation, and title-cleaning rules where expressible purely. No DOM-mocking of scroll behavior; that is §15's job. Add no test dependencies beyond types already present.
+2. **`test/*.test.ts(x)`** — `bun:test` units for: ID validation (whitespace, empty, surrogates), collection duplicate detection, the crossing rule and bottom exception over synthetic geometries (including equal tops and non-monotone order), `activationOffset` validation, `buildOutline` grouping and validation, and title-cleaning rules where expressible purely. SSR boundaries for `TocGroup` (§8.5): the canonical subtree markup over a headings-lane Root, the empty-children guard (no nested `<ol>`), and structural equality of function children + `TocGroup` against manual nested rendering. No DOM-mocking of scroll behavior; that is §15's job. Add no test dependencies beyond types already present.
 3. **README rewrite** — remove the leftover Masonry content; document anatomy, props/attributes tables mirroring §8, semantics, SSR notes (§12), preconditions and limitations (§13, §2, §14), and the QA expectation (§15) in place of any bundle-size table until a measurement path exists.
 4. **Type-check surface** — remove `src/references` from checked scope (move out of `src` or exclude in `tsconfig.json`) so `bun run type-check` fails only on real product code.
 5. **Manual QA pass** per §15 in a real browser; record results in the README. No browser-test infrastructure (settled Round 1).
@@ -443,3 +450,4 @@ Compressed record of the interview, for traceability. R1–R6 = rounds; Q number
 | Close-out (adopted recommendations) | Fragment-alias and `<base>` preconditions (§4.4/13); one-current-link-per-landmark authoring rule; immediate-null transition rule (§4.5); builder rules and always-present `children` (§9.2); plain `Error`, non-normative messages (§10); immutable-input contract (§4.1) |
 | Close-out (R7 revision) | React 19 ref-as-prop delivery of `ref`; parts compose through published-internals `useRenderElement`; parse-don't-validate boundaries (`parseTargetCollection`, `parseActivationOffset`, `parseOutlineHeadings`); definition order follows one stated rule |
 | Outline data lane (R8) | Consumer hook `useTocOutline` (one snapshot per scope identity, SSR-empty); `TocRoot` lanes `targetIds`/`headings`, mutually exclusive; `TocList` function children over the root-context outline, `Select.Value`-modeled; playground simplified to per-variant helpers |
+| Outline rendering (R9) | `TocGroup` composite part owns the outline→JSX recursion (one `HeadingGroup` in, `TocItem`/`TocLink`/guarded nested `TocList` out); playground helper components removed; shape, naming, and no auto-list on `TocList` decided with the user |

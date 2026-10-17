@@ -2,10 +2,8 @@ import * as React from "react";
 import {
   TocRoot,
   TocList,
-  TocItem,
-  TocLink,
+  TocGroup,
   type Heading,
-  type HeadingGroup,
 } from "../../../../src/table-of-contents";
 import "./scroll-container.css";
 
@@ -46,7 +44,7 @@ export function ScrollContainer() {
       <aside className="pg-scroll-sidebar">
         <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-scroll-nav">
           <TocList>
-            {(group) => <ScrollOutlineItemGroup key={group.id} group={group} />}
+            {(group) => <TocGroup key={group.id} group={group} />}
           </TocList>
         </TocRoot>
       </aside>
@@ -66,24 +64,6 @@ function ScrollSection({ heading }: { heading: Heading }) {
       <SectionHeading heading={heading} />
       <p>{FILLER_PARAGRAPH}</p>
     </section>
-  );
-}
-
-// The local outline renderer: one item per group; the top-level list maps
-// through `TocList` function children, and each deeper level maps the group's
-// children from the outline data the consumer recurses over.
-function ScrollOutlineItemGroup({ group }: { group: HeadingGroup }) {
-  return (
-    <TocItem>
-      <TocLink targetId={group.id}>{group.title}</TocLink>
-      {group.children.length > 0 && (
-        <TocList>
-          {group.children.map((child) => (
-            <ScrollOutlineItemGroup key={child.id} group={child} />
-          ))}
-        </TocList>
-      )}
-    </TocItem>
   );
 }
 

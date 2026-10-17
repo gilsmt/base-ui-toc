@@ -2,11 +2,9 @@ import * as React from "react";
 import {
   TocRoot,
   TocList,
-  TocItem,
-  TocLink,
+  TocGroup,
   discoverHeadings,
   type Heading,
-  type HeadingGroup,
 } from "../../../../src/table-of-contents";
 import "./dynamic-targets.css";
 
@@ -65,7 +63,7 @@ export function DynamicTargets() {
         </div>
         <TocRoot headings={headings} className="pg-dt-nav">
           <TocList>
-            {(group) => <DynamicOutlineItemGroup key={group.id} group={group} />}
+            {(group) => <TocGroup key={group.id} group={group} />}
           </TocList>
         </TocRoot>
         <p className="pg-dt-note">
@@ -116,22 +114,4 @@ export function DynamicTargets() {
       currentHiddenId === HIDDEN_SECTION_ID ? null : HIDDEN_SECTION_ID,
     );
   }
-}
-
-// The local outline renderer: one item per group; the top-level list maps
-// through `TocList` function children, and each deeper level maps the group's
-// children from the outline data the consumer recurses over.
-function DynamicOutlineItemGroup({ group }: { group: HeadingGroup }) {
-  return (
-    <TocItem>
-      <TocLink targetId={group.id}>{group.title}</TocLink>
-      {group.children.length > 0 && (
-        <TocList>
-          {group.children.map((child) => (
-            <DynamicOutlineItemGroup key={child.id} group={child} />
-          ))}
-        </TocList>
-      )}
-    </TocItem>
-  );
 }

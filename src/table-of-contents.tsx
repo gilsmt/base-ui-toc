@@ -13,9 +13,9 @@ import { useStableCallback } from "@base-ui/utils/useStableCallback";
  * An unstyled in-page navigation component. `TocRoot` tracks one current
  * location in a scrolling surface (§6) from one tracking lane — a
  * `targetIds` collection or a `headings` entry list (§4.1); `TocList`,
- * `TocItem`, and `TocLink` compose native fragment links over it.
- * `useTocOutline`, `discoverHeadings`, and `buildOutline` supply the heading
- * data and presentational nesting.
+ * `TocItem`, `TocLink`, and `TocGroup` compose native fragment links over
+ * it. `useTocOutline`, `discoverHeadings`, and `buildOutline` supply the
+ * heading data and the outline shape.
  *
  * Specification: SPEC.md. Geometry model is physical, vertical, top-to-bottom.
  */
@@ -788,7 +788,7 @@ export function TocList(componentProps: TocListProps) {
 /** Item props (§8.4): structural part with an empty state. */
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
-/** An entry of the outline structure (§8.4); nesting is the consumer's list structure. */
+/** An entry of the outline structure (§8.4); nesting composes through TocGroup (§8.5) or consumer-authored lists. */
 export function TocItem(componentProps: TocItemProps) {
   const { className, style, render, ref, ...elementProps } = componentProps;
 
@@ -802,14 +802,14 @@ export function TocItem(componentProps: TocItemProps) {
   });
 }
 
-/** Link props (§8.4): component-owned `href`/`aria-current` cannot be re-set by typed consumers (§4.4). */
+/** Link props (§8.6): component-owned `href`/`aria-current` cannot be re-set by typed consumers (§4.4). */
 export interface TocLinkProps extends TocCompositionProps<"a", TocLinkState, "href" | "aria-current"> {
   /** The canonical target ID (§4.4): must be valid and a member of the root collection (§10). */
   targetId: string;
 }
 
 /**
- * A native fragment link to one configured target (§8.5). Component-owned
+ * A native fragment link to one configured target (§8.6). Component-owned
  * `href` and `aria-current` win over conflicting consumer values at runtime
  * (§4.4); consumer handlers stay merged on the link.
  */
@@ -839,4 +839,34 @@ export function TocLink(componentProps: TocLinkProps) {
       }),
     ],
   });
+}
+
+/** Group props (§8.5): the one `HeadingGroup` is the whole input. */
+export interface TocGroupProps {
+  /** The subtree to render (§9.2). */
+  group: HeadingGroup;
+}
+
+/**
+ * One outline subtree (§8.5): an item whose link carries the group title and,
+ * only when the group has children, a nested list of one TocGroup per child.
+ * The part owns the empty-`<ol>` guard and keys the recursion from `child.id`,
+ * so a consumer keys only the top-level group. It renders no host element of
+ * its own, exposes no composition surface, and reads no context: the parts it
+ * composes own their contracts, so a level that needs custom nodes bypasses
+ * this part at that level and composes them directly (§8.2).
+ */
+export function TocGroup({ group }: TocGroupProps) {
+  return (
+    <TocItem>
+      <TocLink targetId={group.id}>{group.title}</TocLink>
+      {group.children.length > 0 && (
+        <TocList>
+          {group.children.map((child) => (
+            <TocGroup key={child.id} group={child} />
+          ))}
+        </TocList>
+      )}
+    </TocItem>
+  );
 }

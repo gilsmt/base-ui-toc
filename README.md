@@ -35,7 +35,7 @@ Import the parts, and assemble them together:
 
 ```tsx
 import {
-  TocRoot, TocList, TocItem, TocLink,
+  TocRoot, TocList, TocItem, TocLink, TocGroup,
   useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
@@ -48,27 +48,36 @@ const { headings } = useTocOutline(article);
 return (
   <TocRoot headings={headings}>
     <TocList>
-      {/* The function child maps the Root-owned outline; keys stay yours. */}
-      {(group) => <OutlineItemGroup key={group.id} group={group} />}
+      {/* The function child maps the Root-owned outline; TocGroup renders
+          each subtree and keys the recursion from the child ids itself. */}
+      {(group) => <TocGroup key={group.id} group={group} />}
     </TocList>
   </TocRoot>
 );
+```
 
-function OutlineItemGroup({ group }: { group: HeadingGroup }) {
-  return (
-    <TocItem>
-      <TocLink targetId={group.id}>{group.title}</TocLink>
+The custom lane stays open: bypass `TocGroup` at a level to render your own nodes there — a consumer-authored item, a custom link render — and keep `TocGroup` below it:
+
+```tsx
+<TocList>
+  {(group) => (
+    <TocItem key={group.id}>
+      <TocLink
+        targetId={group.id}
+        render={(props, state) => <a {...props} className={state.current ? "current" : undefined} />}
+      >
+        {group.title}
+      </TocLink>
       {group.children.length > 0 && (
         <TocList>
-          {/* deeper levels map your own group data */}
           {group.children.map((child) => (
-            <OutlineItemGroup key={child.id} group={child} />
+            <TocGroup key={child.id} group={child} />
           ))}
         </TocList>
       )}
     </TocItem>
-  );
-}
+  )}
+</TocList>
 ```
 
 The id-only `targetIds` lane stays for manual consumers: you own discovery, grouping, and the nesting yourself, and render the nesting from your own outline data:
@@ -101,6 +110,7 @@ Default rendering:
 | `TocList` | `<ol>` | — |
 | `TocItem` | `<li>` | — |
 | `TocLink` | `<a>` | `aria-current="location"` when current |
+| `TocGroup` | — | composite (`<li>` + `<a>` + nested `<ol>`): renders one `HeadingGroup` subtree; the nested list only when children exist |
 
 ## Outline utilities
 
@@ -210,9 +220,19 @@ Structural composition parts. They render your children as-is:
 | State | `{}` | `{}` |
 | Attributes | `data-slot="toc-list"` | `data-slot="toc-item"` |
 
-The nested list structure is yours and mirrors your outline data; the tracked collection stays flat at any nesting depth. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
+The nested list structure composes through `TocGroup` by default (see below) or stays yours and mirrors your outline data; the tracked collection stays flat at any nesting depth. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
 
-`TocList` also accepts a function child `(group) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the outline `TocRoot` built from your `headings` prop and renders one callback element per top-level group — the mapping moves into the part, and keys stay yours. Function children throw under the `targetIds` lane, which owns no outline. Plain children render as-is in both lanes, and every level below the mapped one keeps mapping your own group data. Every `TocList` with function children maps the same top-level groups, so nest plain children below the mapped level.
+`TocList` also accepts a function child `(group) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the outline `TocRoot` built from your `headings` prop and renders one callback element per top-level group — the mapping moves into the part, and keys stay yours. Function children throw under the `targetIds` lane, which owns no outline. Plain children render as-is in both lanes, and every level below the mapped one renders from the group data the callback receives — through `TocGroup` (see below) or your own children. Every `TocList` with function children maps the same top-level groups, so deeper `TocList`s take plain children.
+
+### `TocGroup`
+
+A composite part that renders one `HeadingGroup` subtree: one `TocItem` with a `TocLink` to the group's target, plus a nested `TocList` of one `TocGroup` per child — only when the group has children. It renders no host element of its own, so it exposes no composition interface: the single prop is the whole input.
+
+| Prop | Type | Description |
+| :--- | :--- | :--- |
+| `group` | `HeadingGroup` | The subtree to render. The empty-children guard is the part's rule: a childless group renders no nested `<ol>`. |
+
+The recursion keys itself from `child.id` inside the part; you key only the top-level `TocGroup` in a `TocList` function child. `TocGroup` reads no context of its own — the parts it composes own their contracts — so it renders in both lanes wherever its `TocList`/`TocLink` ancestors are legal. A level that needs custom nodes bypasses `TocGroup` at that level and composes the parts directly (see the custom lane in Anatomy).
 
 ### `TocLink`
 
@@ -346,7 +366,7 @@ Each omission below is deliberate; compose the behavior outside the core:
 
 - Own the target collection and its order; keep IDs valid and unique; treat inputs as immutable snapshots (replace the array or entry objects, never mutate values in place).
 - Call `refresh()` after content changes that no scheduled event covers.
-- Own presentation: styles, nesting, inspection state, previews, disclosures, animations, and empty states.
+- Own presentation: styles, inspection state, previews, disclosures, animations, and empty states; `TocGroup` renders the outline nesting by default, and you nest any level that bypasses it.
 - Coordinate `activationOffset` with CSS scroll offsets where a landing position must correspond to a crossing.
 - Honor the authoring constraints above (one current link per landmark set; the fragment-alias and `<base>` preconditions).
 - Verify assistive-technology behavior manually.
@@ -394,7 +414,7 @@ Vite dev is a manual-verification venue for the checklist above: each variant ex
 
 ## Also exported
 
-The module exports the four parts, the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
+The module exports the five parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`, `TocGroup`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
 
 ## Contributing
 

@@ -17,6 +17,7 @@ import {
   type TocLinkProps,
   TocItem,
   TocLink,
+  TocGroup,
   TocList,
   TocRoot,
 } from "../src/table-of-contents";
@@ -603,6 +604,130 @@ describe("SSR TocList function children", () => {
         ),
       ),
     ).toThrow();
+  });
+});
+
+// Mixed-level outline (§9.2): a skipped level nests the h5 directly under
+// the h3 above it, and a later shallower heading starts a second top group.
+const GROUP_HEADINGS: readonly Heading[] = [
+  heading("intro", 2, "Intro"),
+  heading("setup", 3, "Setup"),
+  heading("setup-keys", 5, "Keys"),
+  heading("faq", 2, "FAQ"),
+  heading("faq-links", 3, "Links"),
+];
+
+const renderWithTocGroup = (): string =>
+  renderToStaticMarkup(
+    React.createElement(
+      TocRoot,
+      { headings: GROUP_HEADINGS },
+      React.createElement(TocList, {
+        children: (group: HeadingGroup) => React.createElement(TocGroup, { key: group.id, group }),
+      }),
+    ),
+  );
+
+// The manual mirror of the part: the same composition, with the empty-children
+// guard the consumer would otherwise own.
+const manualGroupItem = (group: HeadingGroup): React.ReactElement =>
+  React.createElement(
+    TocItem,
+    { key: group.id },
+    React.createElement(TocLink, { targetId: group.id }, group.title),
+    group.children.length > 0
+      ? React.createElement(TocList, null, group.children.map((child) => manualGroupItem(child)))
+      : null,
+  );
+
+describe("TocGroup", () => {
+  test("renders the full subtree: item, link, and nested lists only where children exist", () => {
+    const markup = renderWithTocGroup();
+
+    expect(markup.startsWith("<nav")).toBe(true);
+    expect(markup).toContain(`aria-label="Table of contents"`);
+    // One item and one link per heading.
+    expect((markup.match(/data-slot="toc-item"/g) ?? []).length).toBe(5);
+    expect((markup.match(/data-slot="toc-link"/g) ?? []).length).toBe(5);
+    // One nested list per group with children (intro, setup, faq) plus the top list.
+    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(4);
+    // Hrefs appear in outline order: intro > setup > setup-keys, then faq > faq-links.
+    const fragmentPositions = ["#intro", "#setup", "#setup-keys", "#faq", "#faq-links"].map((fragment) =>
+      markup.indexOf(`href="${fragment}"`),
+    );
+    expect(fragmentPositions.every((position) => position >= 0)).toBe(true);
+    expect(fragmentPositions).toEqual([...fragmentPositions].sort((a, b) => a - b));
+    // A leaf group renders no nested list: the part owns the empty-`<ol>` guard.
+    expect(markup).toContain(`<li data-slot="toc-item"><a data-slot="toc-link" href="#setup-keys">Keys</a></li>`);
+  });
+
+  test("renders no nested list for a group with empty children", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { targetIds: ["leaf"] },
+        React.createElement(
+          TocList,
+          null,
+          React.createElement(TocGroup, {
+            group: { id: "leaf", title: "Leaf", level: 2, children: [] },
+          }),
+        ),
+      ),
+    );
+
+    // Only the consumer's top-level list exists; the childless group adds no `<ol>`.
+    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
+    expect(markup).toContain(`<a data-slot="toc-link" href="#leaf">Leaf</a>`);
+  });
+
+  test("equals the manual nested TocList/TocItem/TocLink rendering of the same outline", () => {
+    const withTocGroup = renderWithTocGroup();
+    const manual = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: GROUP_HEADINGS },
+        React.createElement(TocList, { children: manualGroupItem }),
+      ),
+    );
+
+    // The part is exactly the guarded manual recursion, so the markup matches
+    // attribute for attribute.
+    expect(manual.length).toBeGreaterThan(0);
+    expect(withTocGroup).toBe(manual);
+  });
+
+  test("equals full manual recursion when the consumer maps only the top level", () => {
+    // Function children map the top level; the deeper levels hand each group
+    // to TocGroup instead of recursing manually.
+    const topLevelMapped = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: GROUP_HEADINGS },
+        React.createElement(TocList, {
+          children: (group: HeadingGroup) =>
+            React.createElement(
+              TocItem,
+              { key: group.id },
+              React.createElement(TocLink, { targetId: group.id }, group.title),
+              React.createElement(
+                TocList,
+                null,
+                group.children.map((child) => React.createElement(TocGroup, { key: child.id, group: child })),
+              ),
+            ),
+        }),
+      ),
+    );
+    const manual = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: GROUP_HEADINGS },
+        React.createElement(TocList, { children: manualGroupItem }),
+      ),
+    );
+
+    expect(topLevelMapped).toBe(manual);
   });
 });
 

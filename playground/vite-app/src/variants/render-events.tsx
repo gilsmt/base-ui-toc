@@ -124,9 +124,11 @@ export function RenderEvents() {
   }
 }
 
-// A custom renderer: the part merges href, aria-current, and data-* into the
-// props, this element spreads them, and the state prefix is a marker. The
-// prefix renders per link, so both outline levels show it.
+// The custom lane: the other variants render their nesting through
+// `TocGroup`, this one bypasses it to customize every link. The part merges
+// href, aria-current, and data-* into the props, this element spreads them,
+// and the state prefix is a marker. The prefix renders per link, so both
+// outline levels show it.
 function EventOutlineItem({ group }: { group: HeadingGroup }) {
   return (
     <TocItem>
