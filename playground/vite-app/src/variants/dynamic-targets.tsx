@@ -79,10 +79,9 @@ export function DynamicTargets() {
           return (
             <section
               key={targetSection.id}
-              id={targetSection.id}
               className={isHiddenTarget ? "pg-dt-section pg-dt-section-hidden" : "pg-dt-section"}
             >
-              <h2>{targetSection.title}</h2>
+              <h2 id={targetSection.id}>{targetSection.title}</h2>
               <p>{FILLER_PARAGRAPH}</p>
               <p>{FILLER_PARAGRAPH}</p>
             </section>

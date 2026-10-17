@@ -87,28 +87,28 @@ export function RenderEvents() {
       <div className="pg-rv-main">
         {isBannerMounted && <Banner />}
         <article className="pg-rv-article" ref={articleRef}>
-          <section id="session">
-            <h2>Session</h2>
+          <section>
+            <h2 id="session">Session</h2>
             <FillerParagraphs count={3} />
-            <section id="session-story">
-              <h3>Story</h3>
+            <section>
+              <h3 id="session-story">Story</h3>
               <FillerParagraphs count={2} />
             </section>
           </section>
-          <section id="gesture">
-            <h2>Gesture</h2>
+          <section>
+            <h2 id="gesture">Gesture</h2>
             <FillerParagraphs count={2} />
-            <section id="gesture-thresholds">
-              <h3>Thresholds</h3>
+            <section>
+              <h3 id="gesture-thresholds">Thresholds</h3>
               <FillerParagraphs count={2} />
-              <section id="gesture-thresholds-tuning">
-                <h4>Tuning</h4>
+              <section>
+                <h4 id="gesture-thresholds-tuning">Tuning</h4>
                 <FillerParagraphs count={2} />
               </section>
             </section>
           </section>
-          <section id="records">
-            <h2>Records</h2>
+          <section>
+            <h2 id="records">Records</h2>
             <FillerParagraphs count={3} />
           </section>
         </article>
