@@ -16,17 +16,15 @@ const FILLER_PARAGRAPH =
 export function DocsSidebar() {
   const [article, setArticle] = React.useState<HTMLElement | null>(null);
 
-  // The hook owns the client-side snapshot: discovery runs in a layout effect
-  // after commit, not during rendering, once per article identity (README §Server
-  // rendering). The attachment goes through callback-ref state.
+  // Discovery runs in a layout effect per article identity, not during render;
+  // the attachment goes through callback-ref state.
   const { headings } = useTocOutline(article);
 
   return (
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
         <TocRoot headings={headings} className="pg-docs-nav">
-          {/* One flat map in document order: the library authors keys from
-              the entry ids; indent by heading level. */}
+          {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (
               <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
@@ -36,8 +34,7 @@ export function DocsSidebar() {
           </TocList>
         </TocRoot>
       </aside>
-      {/* Headings carry scroll-margin-top in the stylesheet so fragment
-          landings clear the sticky header; the value matches its height. */}
+      {/* Headings carry scroll-margin-top so fragment landings clear the sticky header. */}
       <article className="pg-docs-article" ref={setArticle}>
         <section>
           <h2 id="overview">Overview</h2>
@@ -132,7 +129,6 @@ export function DocsSidebar() {
   );
 }
 
-// A tiny local helper keeps the article long without a content dependency.
 function FillerParagraphs({ count }: { count: number }) {
   return Array.from({ length: count }, (_, index) => (
     <p key={index}>{FILLER_PARAGRAPH}</p>

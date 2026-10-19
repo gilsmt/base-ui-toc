@@ -5,15 +5,13 @@ export function App() {
   // The registry always holds entries, so the first is the initial variant.
   const [selectedId, setSelectedId] = React.useState(variants[0].id);
 
-  // A switch replaces the main area; the previous variant's document scroll
-  // must not describe the next variant's page.
+  // A switch replaces the main area; the next variant's page must not inherit the previous document scroll.
   React.useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [selectedId]);
 
   const selected = variants.find((variant) => variant.id === selectedId);
-  // The ids on the buttons and in the state share the one registry, so the
-  // selection always resolves.
+  // The button ids and the state share one registry, so the selection always resolves.
   if (selected === undefined) {
     throw new Error(`No variant is registered for the id "${selectedId}"`);
   }

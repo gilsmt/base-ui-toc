@@ -24,9 +24,7 @@ export function RenderEvents() {
   const [activationOffsetPx, setActivationOffsetPx] = React.useState(ACTIVATION_OFFSET_MIN_PX);
   const [isBannerMounted, setIsBannerMounted] = React.useState(false);
 
-  // The article is a mount-time snapshot: the hook discovers once per
-  // article identity, and mounting the banner (a sibling) does not remount
-  // it. refresh() re-measures without re-discovery (README §Server rendering).
+  // Mount-time snapshot: discovery runs once per article identity; refresh() re-measures without re-discovery.
   const { headings } = useTocOutline(article);
 
   return (
@@ -63,11 +61,7 @@ export function RenderEvents() {
           actionsRef={actionsRef}
           className="pg-rv-nav"
         >
-          {/* One flat map in document order: the library authors keys from
-              the entry ids; indent by heading level. The custom lane: the
-              custom link render lives inside the same map; the part merges
-              href, aria-current, and data-* into the props, this element
-              spreads them, and the state prefix marks the current location. */}
+          {/* One flat map; the custom render spreads the merged props and marks the current location. */}
           <TocList>
             {(entry: Heading) => (
               <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
@@ -136,8 +130,7 @@ export function RenderEvents() {
     setIsBannerMounted((wasMounted) => !wasMounted);
   }
 
-  // The banner mounts above the article, so every heading moves; the tracker
-  // keeps its last location until an explicit refresh() re-measures it.
+  // The banner shifts every heading; the tracker keeps its location until refresh() re-measures.
   function handleRefresh() {
     actionsRef.current?.refresh();
   }
@@ -152,7 +145,6 @@ function Banner() {
   );
 }
 
-// A tiny local helper keeps the article long without a content dependency.
 function FillerParagraphs({ count }: { count: number }) {
   return Array.from({ length: count }, (_, index) => (
     <p key={index}>{FILLER_PARAGRAPH}</p>
