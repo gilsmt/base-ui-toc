@@ -13,12 +13,9 @@ import {
   type TocGeometrySample,
   type TocTargetGeometry,
   type Heading,
-  type HeadingGroup,
-  type TocGroupProps,
   type TocLinkProps,
   TocItem,
   TocLink,
-  TocGroup,
   TocList,
   TocRoot,
 } from "../src/table-of-contents";
@@ -563,47 +560,6 @@ describe("SSR headings lane", () => {
   });
 });
 
-describe("SSR TocList function children", () => {
-  test("maps the Root-owned outline onto the list items", () => {
-    const itemForGroup = (group: HeadingGroup): React.ReactElement =>
-      React.createElement(
-        TocItem,
-        null,
-        React.createElement(TocLink, { targetId: group.id }, group.title),
-        React.createElement(TocGroup, { group, children: itemForGroup }),
-      );
-
-    const markup = renderToStaticMarkup(
-      React.createElement(
-        TocRoot,
-        { headings: LANE_HEADINGS },
-        React.createElement(TocList, { children: itemForGroup }),
-      ),
-    );
-
-    // The function child runs once per top-level group; the part keys each
-    // mapped child from the group id, so the callback output carries no keys.
-    expect(markup).toContain('href="#intro"');
-    expect(markup).toContain("Intro");
-    expect(markup).toContain('href="#cookbook"');
-    expect(markup).toContain("Cookbook");
-    expect(markup).toContain(`data-slot="toc-list"`);
-    expect(markup).toContain(`data-slot="toc-item"`);
-  });
-
-  test("throw in the targetIds lane, which owns no outline", () => {
-    expect(() =>
-      renderToStaticMarkup(
-        React.createElement(
-          TocRoot,
-          { targetIds: ["intro"] },
-          React.createElement(TocList, { children: (group: HeadingGroup) => group.id }),
-        ),
-      ),
-    ).toThrow();
-  });
-});
-
 // Mixed-level outline (§9.2): a skipped level nests the h5 directly under
 // the h3 above it, and a later shallower heading starts a second top group.
 const GROUP_HEADINGS: readonly Heading[] = [
@@ -614,159 +570,97 @@ const GROUP_HEADINGS: readonly Heading[] = [
   heading("faq-links", 3, "Links"),
 ];
 
-// The canonical fast lane (§8.5): one named callback reused at every depth.
-// The callback output carries no keys: TocList and TocGroup author each key
-// from the group id.
-const outlineItem = (group: HeadingGroup): React.ReactElement =>
+// The callback output carries no key: TocList authors every key from the
+// entry ids (§8.5).
+const flatItemForEntry = (entry: Heading): React.ReactElement =>
   React.createElement(
     TocItem,
     null,
-    React.createElement(TocLink, { targetId: group.id }, group.title),
-    React.createElement(TocGroup, { group, children: outlineItem }),
+    React.createElement(TocLink, { targetId: entry.id }, entry.title),
   );
 
-const renderWithTocGroup = (): string =>
-  renderToStaticMarkup(
-    React.createElement(
-      TocRoot,
-      { headings: GROUP_HEADINGS },
-      React.createElement(TocList, { children: outlineItem }),
-    ),
-  );
+describe("SSR TocList function children", () => {
+  test("maps the Root-owned outline into one flat list in document order", () => {
+    const receivedIds: string[] = [];
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: GROUP_HEADINGS },
+        React.createElement(TocList, {
+          children: (entry: Heading) => {
+            receivedIds.push(entry.id);
+            return flatItemForEntry(entry);
+          },
+        }),
+      ),
+    );
 
-// The manual mirror of the part: the guarded nesting a consumer authors
-// without TocGroup, keyed as the consumer's own arrays require.
-const manualOutlineItem = (group: HeadingGroup): React.ReactElement =>
-  React.createElement(
-    TocItem,
-    { key: group.id },
-    React.createElement(TocLink, { targetId: group.id }, group.title),
-    group.children.length > 0
-      ? React.createElement(TocList, null, group.children.map((child) => manualOutlineItem(child)))
-      : null,
-  );
-
-describe("TocGroup", () => {
-  test("maps child groups through one callback: items, links, and nested lists at every depth", () => {
-    const markup = renderWithTocGroup();
-
-    expect(markup.startsWith("<nav")).toBe(true);
-    expect(markup).toContain(`aria-label="Table of contents"`);
-    // One item and one link per heading.
+    // One callback call per heading, in pre-order = document order.
+    expect(receivedIds).toEqual(["intro", "setup", "setup-keys", "faq", "faq-links"]);
+    // One flat list, one item and one link per heading; no nested list.
+    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
     expect((markup.match(/data-slot="toc-item"/g) ?? []).length).toBe(5);
     expect((markup.match(/data-slot="toc-link"/g) ?? []).length).toBe(5);
-    // One nested list per group with children (intro, setup, faq) plus the top list.
-    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(4);
-    // Hrefs appear in outline order: intro > setup > setup-keys, then faq > faq-links.
     const fragmentPositions = ["#intro", "#setup", "#setup-keys", "#faq", "#faq-links"].map((fragment) =>
       markup.indexOf(`href="${fragment}"`),
     );
     expect(fragmentPositions.every((position) => position >= 0)).toBe(true);
     expect(fragmentPositions).toEqual([...fragmentPositions].sort((a, b) => a - b));
-    // A leaf group renders no nested list: the part owns the empty-`<ol>` guard.
-    expect(markup).toContain(`<li data-slot="toc-item"><a data-slot="toc-link" href="#setup-keys">Keys</a></li>`);
-    // The callback output carries no keys, yet the tree equals the keyed
-    // manual mirror: the library authors every key from the group ids.
-    const keyedViaFunctionChildren = renderToStaticMarkup(
-      React.createElement(
-        TocRoot,
-        { headings: GROUP_HEADINGS },
-        React.createElement(TocList, { children: manualOutlineItem }),
-      ),
-    );
-    expect(markup).toBe(keyedViaFunctionChildren);
   });
 
-  test("renders nothing for a childless group, and the child callback never runs", () => {
-    let childCalls = 0;
+  test("authors keys for the mapped children", () => {
+    const consoleErrorCalls: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrorCalls.push(args);
+    };
+    try {
+      // The callback output carries no key: the part authors it, so React
+      // emits no missing-key warning during the server render.
+      renderToStaticMarkup(
+        React.createElement(
+          TocRoot,
+          { headings: GROUP_HEADINGS },
+          React.createElement(TocList, { children: flatItemForEntry }),
+        ),
+      );
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(consoleErrorCalls).toEqual([]);
+  });
+
+  test("renders an empty headings list as an empty list and never calls the callback", () => {
+    let callbackCalls = 0;
     const markup = renderToStaticMarkup(
       React.createElement(
         TocRoot,
-        { targetIds: ["leaf"] },
-        React.createElement(
-          TocList,
-          null,
-          React.createElement(TocGroup, {
-            group: { id: "leaf", title: "Leaf", level: 2, children: [] },
-            children: (child: HeadingGroup) => {
-              childCalls += 1;
-              return React.createElement(TocItem, null, React.createElement(TocLink, { targetId: child.id }, child.title));
-            },
-          }),
-        ),
+        { headings: [] },
+        React.createElement(TocList, {
+          children: (entry: Heading) => {
+            callbackCalls += 1;
+            return flatItemForEntry(entry);
+          },
+        }),
       ),
     );
 
-    // Only the consumer's top-level list exists: the childless group adds no
-    // `<ol>`, which also holds in the targetIds lane because the part reads
-    // no context.
     expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
-    expect(childCalls).toBe(0);
+    expect(markup).not.toContain("href=");
+    expect(callbackCalls).toBe(0);
   });
 
-  test("equals the manual nested TocList/TocItem/TocLink rendering of the same outline", () => {
-    const withTocGroup = renderWithTocGroup();
-    // The manual mirror maps the outline with plain children, the way a
-    // consumer authors the nesting without TocGroup or function children.
-    const manual = renderToStaticMarkup(
-      React.createElement(
-        TocRoot,
-        { headings: GROUP_HEADINGS },
-        React.createElement(TocList, null, buildOutline(GROUP_HEADINGS).map((group) => manualOutlineItem(group))),
-      ),
-    );
-
-    // The part is exactly the guarded manual composition, so the markup
-    // matches attribute for attribute.
-    expect(manual.length).toBeGreaterThan(0);
-    expect(withTocGroup).toBe(manual);
-  });
-
-  test("throws on non-function children, before the empty guard", () => {
-    // A JS caller can set `children` that TS consumers cannot type: the
-    // function-children boundary rejects it at render, before the empty
-    // guard can return null (§10).
-    const nonFunctionChildrenProps = (group: HeadingGroup) =>
-      ({
-        group,
-        children: React.createElement(TocItem, null, "Not a mapping function"),
-      }) as unknown as TocGroupProps;
-
-    const childfulGroup: HeadingGroup = {
-      id: "intro",
-      title: "Intro",
-      level: 2,
-      children: [{ id: "setup", title: "Setup", level: 3, children: [] }],
-    };
-    const childlessGroup: HeadingGroup = { id: "leaf", title: "Leaf", level: 2, children: [] };
-
+  test("throws in the targetIds lane, which owns no outline", () => {
     expect(() =>
       renderToStaticMarkup(
         React.createElement(
           TocRoot,
-          { targetIds: ["intro", "setup"] },
-          React.createElement(
-            TocList,
-            null,
-            React.createElement(TocGroup, nonFunctionChildrenProps(childfulGroup)),
-          ),
+          { targetIds: ["intro"] },
+          React.createElement(TocList, { children: (entry: Heading) => entry.id }),
         ),
       ),
-    ).toThrow("TocGroup receives function children mapping each child group.");
-
-    expect(() =>
-      renderToStaticMarkup(
-        React.createElement(
-          TocRoot,
-          { targetIds: ["leaf"] },
-          React.createElement(
-            TocList,
-            null,
-            React.createElement(TocGroup, nonFunctionChildrenProps(childlessGroup)),
-          ),
-        ),
-      ),
-    ).toThrow("TocGroup receives function children mapping each child group.");
+    ).toThrow("TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.");
   });
 });
 

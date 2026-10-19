@@ -74,10 +74,6 @@
   list-style: none;
 }
 
-.pg-rv-nav ol ol {
-  padding-left: 1rem;
-}
-
 .pg-rv-link {
   display: inline-block;
   padding: 0.25rem 0.5rem;

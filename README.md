@@ -4,7 +4,7 @@ An unstyled, copy-and-paste Table of Contents for in-page navigation in React 19
 
 One call stack serves two presentations:
 
-- a classic text outline (nested lists of links)
+- a classic text outline (links in one flat list, indented by heading level; nested lists are an optional manual composition)
 - a compact scrubber-style rail (small ticks with accessible names)
 
 The difference is presentation only. There is no second interaction model: every entry is a link, hovering or focusing an entry inspects it, and activating it navigates. Floating panels, previews, tick magnification, progress meters, and disclosure state are consumer-composed UI. The component forwards events and refs, and it owns no inspection state. Inspecting an entry never changes the document's current location, and navigation never changes inspection.
@@ -35,7 +35,7 @@ Import the parts, and assemble them together:
 
 ```tsx
 import {
-  TocRoot, TocList, TocItem, TocLink, TocGroup,
+  TocRoot, TocList, TocItem, TocLink,
   useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
@@ -45,39 +45,38 @@ import {
 // render, and the server holds no document.
 const { headings } = useTocOutline(article);
 
-// One render callback reused at every depth: the item and the link for one
-// group, and TocGroup feeding the child groups back into it. Keys are
-// library-authored from the group ids.
-const outlineItem = (group: HeadingGroup) => (
-  <TocItem>
-    <TocLink targetId={group.id}>{group.title}</TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
-
+// One flat map in document order: the library authors keys from the entry
+// ids, and the consumer indents by heading level.
 return (
   <TocRoot headings={headings}>
-    <TocList>{outlineItem}</TocList>
+    <TocList>
+      {(entry) => (
+        <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
+          <TocLink targetId={entry.id}>{entry.title}</TocLink>
+        </TocItem>
+      )}
+    </TocList>
   </TocRoot>
 );
 ```
 
-The custom lane stays open: the callback is the composition, so a level that needs custom nodes composes them inside the same callback — a custom link render, a consumer-authored node — and passes the callback to the next `TocGroup`:
+The custom lane stays open: the same inline map is the composition, so a custom `TocLink` render lives inside it:
 
 ```tsx
-const outlineItem = (group: HeadingGroup) => (
-  <TocItem>
-    <TocLink
-      targetId={group.id}
-      render={(props, state) => <a {...props} className={state.current ? "current" : undefined} />}
-    >
-      {group.title}
-    </TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
-
-<TocList>{outlineItem}</TocList>
+<TocRoot headings={headings}>
+  <TocList>
+    {(entry) => (
+      <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
+        <TocLink
+          targetId={entry.id}
+          render={(props, state) => <a {...props} className={state.current ? "current" : undefined} />}
+        >
+          {entry.title}
+        </TocLink>
+      </TocItem>
+    )}
+  </TocList>
+</TocRoot>
 ```
 
 The id-only `targetIds` lane stays for manual consumers: you own discovery, grouping, and the nesting yourself, and render the nesting from your own outline data:
@@ -110,7 +109,6 @@ Default rendering:
 | `TocList` | `<ol>` | — |
 | `TocItem` | `<li>` | — |
 | `TocLink` | `<a>` | `aria-current="location"` when current |
-| `TocGroup` | — | composite: renders the nested `<ol>` only when children exist; maps child groups through function children |
 
 ## Outline utilities
 
@@ -220,20 +218,9 @@ Structural composition parts. They render your children as-is:
 | State | `{}` | `{}` |
 | Attributes | `data-slot="toc-list"` | `data-slot="toc-item"` |
 
-The nested list structure composes through `TocGroup`'s function children by default (see below) or stays yours and mirrors your outline data; the tracked collection stays flat at any nesting depth. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
+The mapping lane renders one flat `<ol>` in document order; the tracked collection stays flat at any presentation depth. Semantic nesting is your composition: pass `buildOutline` output and author the `<TocList>`/`TocItem` structure yourself when you want nested lists. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
 
-`TocList` also accepts a function child `(group) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the outline `TocRoot` built from your `headings` prop and renders one callback element per top-level group — the mapping moves into the part, and the part keys each mapped child from the group id, so your callback output never needs a key. Function children throw under the `targetIds` lane, which owns no outline. Plain children render as-is in both lanes, and every level below the mapped one renders from the group data the callback receives — through `TocGroup` (see below) or your own children. Every `TocList` with function children maps the same top-level groups, so deeper `TocList`s take plain children.
-
-### `TocGroup`
-
-The data channel from one group to its children. It renders the nested `<ol>` that maps the group's children through your function children — and nothing else: no host element of its own, no composition interface, no state.
-
-| Prop | Type | Description |
-| :--- | :--- | :--- |
-| `group` | `HeadingGroup` | The parent group; its `children` are the data the callback maps. |
-| `children` | `(child: HeadingGroup) => ReactNode` | Maps one child group to that child's rendered entry. Required and checked first: children that are not a function throw at render, before the empty guard. |
-
-A group with no children renders nothing — the nested `<ol>` exists only when children exist, and the callback never runs. Each mapped child is keyed from `child.id`, so your callback output never needs a key (the same rule `TocList` applies to its function children). `TocGroup` reads no context of its own — the parts it composes own their contracts — so it renders in both lanes wherever its `TocList`/`TocLink` ancestors are legal. One callback serves every depth: it renders the item and the link for the group it receives, and passes itself to the next `TocGroup` (see Anatomy).
+`TocList` also accepts a function child `(entry) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the outline `TocRoot` built from your `headings` prop and flattens it pre-order — document order — calling your callback once per heading. It renders the results as one flat `<ol>`, and it keys each mapped child from `entry.id`, so your callback output never needs a key. Each entry is `{ id, title, level }`: indent and style by `level` yourself. Function children throw under the `targetIds` lane, which owns no outline. Plain children render as-is in both lanes and outside any Root; `<TocList />` renders an empty list, not the outline. An empty outline also renders an empty `<ol>`, and the callback never runs. A nested `TocList` given function children maps the same root outline again, so nest with plain children and `buildOutline` output instead.
 
 ### `TocLink`
 
@@ -367,7 +354,7 @@ Each omission below is deliberate; compose the behavior outside the core:
 
 - Own the target collection and its order; keep IDs valid and unique; treat inputs as immutable snapshots (replace the array or entry objects, never mutate values in place).
 - Call `refresh()` after content changes that no scheduled event covers.
-- Own presentation: styles, inspection state, previews, disclosures, animations, and empty states; `TocGroup` feeds child groups to your function children by default, and you compose every level's entries inside its callback.
+- Own presentation: styles, inspection state, previews, disclosures, animations, and empty states; `TocList` function children hand one flat entry per heading in document order, and indentation and any nested list structure are yours.
 - Coordinate `activationOffset` with CSS scroll offsets where a landing position must correspond to a crossing.
 - Honor the authoring constraints above (one current link per landmark set; the fragment-alias and `<base>` preconditions).
 - Verify assistive-technology behavior manually.
@@ -415,7 +402,7 @@ Vite dev is a manual-verification venue for the checklist above: each variant ex
 
 ## Also exported
 
-The module exports the five parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`, `TocGroup`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
+The module exports the four parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
 
 ## Contributing
 
