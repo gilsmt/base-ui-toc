@@ -4,9 +4,8 @@ import {
   TocList,
   TocItem,
   TocLink,
-  TocGroup,
   useTocOutline,
-  type HeadingGroup,
+  type Heading,
   type TocActions,
 } from "../../../../src/table-of-contents";
 import "./render-events.css";
@@ -64,7 +63,28 @@ export function RenderEvents() {
           actionsRef={actionsRef}
           className="pg-rv-nav"
         >
-          <TocList>{outlineItem}</TocList>
+          {/* One flat map in document order: the library authors keys from
+              the entry ids; indent by heading level. The custom lane: the
+              custom link render lives inside the same map; the part merges
+              href, aria-current, and data-* into the props, this element
+              spreads them, and the state prefix marks the current location. */}
+          <TocList>
+            {(entry: Heading) => (
+              <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
+                <TocLink
+                  targetId={entry.id}
+                  render={(props, state) => (
+                    <a {...props} className={state.current ? "pg-rv-link pg-rv-link-current" : "pg-rv-link"}>
+                      {state.current ? "▸ " : ""}
+                      {props.children}
+                    </a>
+                  )}
+                >
+                  {entry.title}
+                </TocLink>
+              </TocItem>
+            )}
+          </TocList>
         </TocRoot>
         <p className="pg-rv-note">
           Large offsets can select a target below the fold; the tracker applies
@@ -122,27 +142,6 @@ export function RenderEvents() {
     actionsRef.current?.refresh();
   }
 }
-
-// The custom lane: the callback composes every level, so the custom link
-// render lives inside it. The part merges href, aria-current, and data-*
-// into the props, this element spreads them, and the state prefix is a
-// marker that follows the current location.
-const outlineItem = (group: HeadingGroup): React.ReactElement => (
-  <TocItem>
-    <TocLink
-      targetId={group.id}
-      render={(props, state) => (
-        <a {...props} className={state.current ? "pg-rv-link pg-rv-link-current" : "pg-rv-link"}>
-          {state.current ? "▸ " : ""}
-          {props.children}
-        </a>
-      )}
-    >
-      {group.title}
-    </TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
 
 function Banner() {
   return (

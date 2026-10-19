@@ -4,25 +4,14 @@ import {
   TocList,
   TocItem,
   TocLink,
-  TocGroup,
   useTocOutline,
-  type HeadingGroup,
+  type Heading,
 } from "../../../../src/table-of-contents";
 import "./docs-sidebar.css";
 
 // Repeat one sentence so the article length stays easy to reason about.
 const FILLER_PARAGRAPH =
   "The section body holds filler text so the page grows long enough to scroll through several headings in one read.";
-
-// One render callback reused at every depth: the item and the link for one
-// group, and TocGroup feeding the child groups back into it. Keys are
-// library-authored from the group ids.
-const outlineItem = (group: HeadingGroup): React.ReactElement => (
-  <TocItem>
-    <TocLink targetId={group.id}>{group.title}</TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
 
 export function DocsSidebar() {
   const [article, setArticle] = React.useState<HTMLElement | null>(null);
@@ -36,7 +25,15 @@ export function DocsSidebar() {
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
         <TocRoot headings={headings} className="pg-docs-nav">
-          <TocList>{outlineItem}</TocList>
+          {/* One flat map in document order: the library authors keys from
+              the entry ids; indent by heading level. */}
+          <TocList>
+            {(entry: Heading) => (
+              <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
+                <TocLink targetId={entry.id}>{entry.title}</TocLink>
+              </TocItem>
+            )}
+          </TocList>
         </TocRoot>
       </aside>
       {/* Headings carry scroll-margin-top in the stylesheet so fragment

@@ -4,9 +4,7 @@ import {
   TocList,
   TocItem,
   TocLink,
-  TocGroup,
   type Heading,
-  type HeadingGroup,
 } from "../../../../src/table-of-contents";
 import "./scroll-container.css";
 
@@ -34,16 +32,6 @@ const HEADINGS: readonly Heading[] = [
 const FILLER_PARAGRAPH =
   "This body text fills the scrollbox so several headings travel past the activation line in one scroll.";
 
-// One render callback reused at every depth: the item and the link for one
-// group, and TocGroup feeding the child groups back into it. Keys are
-// library-authored from the group ids.
-const outlineItem = (group: HeadingGroup): React.ReactElement => (
-  <TocItem>
-    <TocLink targetId={group.id}>{group.title}</TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
-
 export function ScrollContainer() {
   const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
   // The scrollport reaches the tracker through callback-ref state: if the box
@@ -56,7 +44,15 @@ export function ScrollContainer() {
     <div className="pg-scroll">
       <aside className="pg-scroll-sidebar">
         <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-scroll-nav">
-          <TocList>{outlineItem}</TocList>
+          {/* One flat map in document order: the library authors keys from
+              the entry ids; indent by heading level. */}
+          <TocList>
+            {(entry: Heading) => (
+              <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
+                <TocLink targetId={entry.id}>{entry.title}</TocLink>
+              </TocItem>
+            )}
+          </TocList>
         </TocRoot>
       </aside>
       <div className="pg-scroll-view" ref={attachScrollElement}>

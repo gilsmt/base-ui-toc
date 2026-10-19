@@ -4,10 +4,8 @@ import {
   TocList,
   TocItem,
   TocLink,
-  TocGroup,
   discoverHeadings,
   type Heading,
-  type HeadingGroup,
 } from "../../../../src/table-of-contents";
 import "./dynamic-targets.css";
 
@@ -33,16 +31,6 @@ const ADDED_SECTION_TITLE_PREFIX = "Added section";
 
 const FILLER_PARAGRAPH =
   "The section holds filler text so the document scrolls while the collection changes.";
-
-// One render callback reused at every depth: the item and the link for one
-// group, and TocGroup feeding the child groups back into it. Keys are
-// library-authored from the group ids.
-const outlineItem = (group: HeadingGroup): React.ReactElement => (
-  <TocItem>
-    <TocLink targetId={group.id}>{group.title}</TocLink>
-    <TocGroup group={group}>{outlineItem}</TocGroup>
-  </TocItem>
-);
 
 export function DynamicTargets() {
   const articleRef = React.useRef<HTMLElement | null>(null);
@@ -75,7 +63,15 @@ export function DynamicTargets() {
           <button type="button" onClick={handleToggleHidden}>Toggle hidden</button>
         </div>
         <TocRoot headings={headings} className="pg-dt-nav">
-          <TocList>{outlineItem}</TocList>
+          {/* One flat map in document order: the library authors keys from
+              the entry ids; indent by heading level. */}
+          <TocList>
+            {(entry: Heading) => (
+              <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
+                <TocLink targetId={entry.id}>{entry.title}</TocLink>
+              </TocItem>
+            )}
+          </TocList>
         </TocRoot>
         <p className="pg-dt-note">
           The hidden section keeps its heading in the DOM, so it stays in the

@@ -19,10 +19,6 @@
   list-style: none;
 }
 
-.pg-scroll-nav ol ol {
-  padding-left: 1rem;
-}
-
 .pg-scroll-nav a {
   display: inline-block;
   padding: 0.25rem 0.5rem;

@@ -13,10 +13,11 @@ import { useStableCallback } from "@base-ui/utils/useStableCallback";
  * An unstyled in-page navigation component. `TocRoot` tracks one current
  * location in a scrolling surface (§6) from one tracking lane — a
  * `targetIds` collection or a `headings` entry list (§4.1); `TocList`,
- * `TocItem`, and `TocLink` compose native fragment links over it, and
- * `TocGroup` feeds child groups to the consumer, which composes the items
- * and the links. `useTocOutline`, `discoverHeadings`, and `buildOutline`
- * supply the heading data and the outline shape.
+ * `TocItem`, and `TocLink` compose native fragment links over it. `TocList`
+ * maps the Root-owned outline into one flat sequence in document order, and
+ * the consumer composes each entry with `TocItem`/`TocLink`.
+ * `useTocOutline`, `discoverHeadings`, and `buildOutline` supply the heading
+ * data and the outline shape.
  *
  * Specification: SPEC.md. Geometry model is physical, vertical, top-to-bottom.
  */
@@ -80,8 +81,6 @@ const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
 const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX = "targetId is not in the root collection: ";
 
 const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE = "TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.";
-
-const INVALID_GROUP_FUNCTION_CHILDREN_MESSAGE = "TocGroup receives function children mapping each child group.";
 
 const OWNERSHIP_ERROR_MESSAGE = "Toc target resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
 
@@ -754,32 +753,34 @@ export function TocRoot(componentProps: TocRootProps) {
 export interface TocListProps extends TocCompositionProps<"ol", TocListState, "children"> {
   /**
    * Plain children render consumer-authored content as-is (§8.4). A function
-   * child receives one outline group per call (Select.Value shape) and maps
-   * the `headings` lane's outline onto the `<ol>` (§8.4); the part keys each
-   * mapped child from the group id, so the callback output never needs a key.
+   * child receives one outline entry per call (Select.Value shape) in
+   * document order and maps the `headings` lane's outline onto one flat
+   * `<ol>` (§8.5); the part keys each mapped child from the entry id, so the
+   * callback output never needs a key. Function children require a
+   * Root-owned outline.
    */
-  children?: React.ReactNode | ((group: HeadingGroup) => React.ReactNode) | undefined;
+  children?: React.ReactNode | ((entry: Heading) => React.ReactNode) | undefined;
 }
 
-/** An ordered list level of the outline structure (§8.4). */
+/** A flat ordered list of outline entries (§8.4, §8.5). */
 export function TocList(componentProps: TocListProps) {
   const rootContext = React.useContext(TocRootContext);
   const { className, style, render, ref, children: childrenProp, ...elementProps } = componentProps;
 
   // Plain children pass through untouched in both lanes and outside any
-  // Root. A function child maps the Root-owned outline (§8.4), so the
+  // Root. A function child maps the Root-owned outline (§8.5), so the
   // `targetIds` lane — which owns no outline — is a configuration error.
   let children = childrenProp;
   if (typeof children === "function") {
     // The callback reads a const, not the reassigned `children` binding.
-    const renderGroup = children;
+    const renderEntry = children;
     const outline = rootContext === undefined ? null : rootContext.outline;
     if (outline === null) throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
-    // The part authors each key from the group id, so the consumer's
-    // callback output carries no key — the same rule TocGroup applies one
-    // level deeper (§8.5).
-    children = outline.map((group) => (
-      <React.Fragment key={group.id}>{renderGroup(group)}</React.Fragment>
+    // One callback call per heading in document order. The part authors each
+    // key from the entry id, so the consumer's callback output carries no
+    // key (§8.5).
+    children = flattenOutline(outline).map((entry) => (
+      <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
     ));
   }
 
@@ -793,10 +794,26 @@ export function TocList(componentProps: TocListProps) {
   });
 }
 
+/**
+ * Flattens the outline in pre-order: a group precedes its children, and a
+ * subtree finishes before the next sibling — document order. Heading levels
+ * cap the depth at six, so the recursion is bounded.
+ */
+function flattenOutline(
+  outline: readonly HeadingGroup[],
+  flatEntries: Heading[] = [],
+): readonly Heading[] {
+  for (const group of outline) {
+    flatEntries.push({ id: group.id, title: group.title, level: group.level });
+    flattenOutline(group.children, flatEntries);
+  }
+  return flatEntries;
+}
+
 /** Item props (§8.4): structural part with an empty state. */
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
-/** An entry of the outline structure (§8.4); deeper levels render from the child groups TocGroup feeds to function children (§8.5), or from consumer-authored lists. */
+/** An entry of the flat outline (§8.4); the fast lane renders one flat item per heading, and nested lists are consumer-authored from `buildOutline` when wanted (§8.5). */
 export function TocItem(componentProps: TocItemProps) {
   const { className, style, render, ref, ...elementProps } = componentProps;
 
@@ -847,38 +864,4 @@ export function TocLink(componentProps: TocLinkProps) {
       }),
     ],
   });
-}
-
-/** Group props (§8.5): the children of one group are the data; the consumer maps them. */
-export interface TocGroupProps {
-  /** The parent group; only its children reach the consumer (§9.2). */
-  group: HeadingGroup;
-  /** Maps one child group to that child's rendered entry (§8.4). */
-  children: (child: HeadingGroup) => React.ReactNode;
-}
-
-/**
- * The data channel from one group to its children (§8.5): function children
- * map each child group to that child's entry, and the part renders those
- * entries through `TocList`. The consumer composes the items and the links;
- * the part authors each key from the child id. A childless group renders no
- * `<ol>` — a list without `<li>` children is invalid HTML — and the child
- * callback never runs. The part renders no host element of its own and
- * exposes no composition surface — §8.2 does not apply — and reads no
- * context: `TocList`/`TocLink` own their contracts, so the Root requirement
- * reaches this part transitively through them. Check order (§10): the
- * function-children boundary precedes the empty guard, so a non-function
- * child throws even when the group is childless.
- */
-export function TocGroup({ group, children: childrenProp }: TocGroupProps): React.ReactElement | null {
-  if (typeof childrenProp !== "function") throw new Error(INVALID_GROUP_FUNCTION_CHILDREN_MESSAGE);
-  if (group.children.length === 0) return null;
-
-  return (
-    <TocList>
-      {group.children.map((child) => (
-        <React.Fragment key={child.id}>{childrenProp(child)}</React.Fragment>
-      ))}
-    </TocList>
-  );
 }
