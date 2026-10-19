@@ -12,8 +12,7 @@ export interface VariantEntry {
   element: React.ReactElement;
 }
 
-// The single source of truth for the playground: App reads this registry and
-// no variant appears anywhere else.
+// Single source of truth: App reads this registry, and no variant appears anywhere else.
 export const variants: VariantEntry[] = [
   {
     id: "docs-sidebar",

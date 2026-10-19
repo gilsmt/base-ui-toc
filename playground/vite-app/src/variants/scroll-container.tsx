@@ -8,8 +8,7 @@ import {
 } from "../../../../src/table-of-contents";
 import "./scroll-container.css";
 
-// Hard-coded source data: discovery is skipped so the grouping edge cases
-// (README §buildOutline) are visible without page content.
+// Hard-coded data: discovery is skipped so the grouping edge cases stay visible.
 const HEADINGS: readonly Heading[] = [
   { id: "getting-started", title: "Getting started", level: 2 },
   { id: "getting-started-install", title: "Install", level: 3 },
@@ -20,7 +19,7 @@ const HEADINGS: readonly Heading[] = [
   { id: "api-rendering", title: "Rendering", level: 3 },
   { id: "api-rendering-content", title: "Content", level: 4 },
   { id: "api-rendering-changes", title: "Changes", level: 4 },
-  // A later heading shallower than the branch above starts a new top group.
+  // A later shallower heading starts a new top group.
   { id: "notes", title: "Notes", level: 2 },
   { id: "notes-keyboard", title: "Keyboard", level: 3 },
   { id: "standards", title: "Standards", level: 2 },
@@ -34,8 +33,7 @@ const FILLER_PARAGRAPH =
 
 export function ScrollContainer() {
   const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
-  // The scrollport reaches the tracker through callback-ref state: if the box
-  // unmounts and reattaches, the new element resumes tracking (README §4).
+  // Callback-ref state: a detached and reattached scrollport resumes tracking.
   const attachScrollElement = React.useCallback((element: HTMLDivElement | null) => {
     setScrollElement(element);
   }, []);
@@ -44,8 +42,7 @@ export function ScrollContainer() {
     <div className="pg-scroll">
       <aside className="pg-scroll-sidebar">
         <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-scroll-nav">
-          {/* One flat map in document order: the library authors keys from
-              the entry ids; indent by heading level. */}
+          {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (
               <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
@@ -74,8 +71,7 @@ function ScrollSection({ heading }: { heading: Heading }) {
   );
 }
 
-// The tracker validates no tag names: the heading carries the anchor id and
-// mirrors the entry level.
+// The tracker validates no tag names; the heading carries the anchor id and the level.
 function SectionHeading({ heading }: { heading: Heading }) {
   switch (heading.level) {
     case 2:
@@ -84,8 +80,7 @@ function SectionHeading({ heading }: { heading: Heading }) {
       return <h3 id={heading.id}>{heading.title}</h3>;
     case 4:
       return <h4 id={heading.id}>{heading.title}</h4>;
-    // The static data holds only levels 2-4; the Heading annotation permits
-    // any level, so the assumption is explicit.
+    // The data holds only levels 2-4; the explicit throw states the assumption.
     default:
       throw new Error(`The scroll-container data holds level ${heading.level}, but the sections render levels 2-4`);
   }

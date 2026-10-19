@@ -9,18 +9,7 @@ import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
-/**
- * An unstyled in-page navigation component. `TocRoot` tracks one current
- * location in a scrolling surface (§6) from one tracking lane — a
- * `targetIds` collection or a `headings` entry list (§4.1); `TocList`,
- * `TocItem`, and `TocLink` compose native fragment links over it. `TocList`
- * maps the Root-owned outline into one flat sequence in document order, and
- * the consumer composes each entry with `TocItem`/`TocLink`.
- * `useTocOutline`, `discoverHeadings`, and `buildOutline` supply the heading
- * data and the outline shape.
- *
- * Specification: SPEC.md. Geometry model is physical, vertical, top-to-bottom.
- */
+/** Unstyled in-page navigation: `TocRoot` tracks one current location in a scrolling surface. See SPEC.md. */
 
 const MIN_HEADING_LEVEL = 1;
 const MAX_HEADING_LEVEL = 6;
@@ -40,30 +29,24 @@ const HEADING_LEVEL_BY_TAG_NAME: Readonly<Record<string, HeadingLevel | undefine
 
 const TITLE_EXCLUDED_TAG_NAMES: ReadonlySet<string> = new Set(["script", "style"]);
 
-// ASCII whitespace runs within a heading title collapse to one space.
+// Whitespace runs inside a heading title collapse to one space.
 const TITLE_WHITESPACE_RUN_PATTERN = /\s+/g;
 
-// U+0009–U+000D and U+0020 are forbidden in target IDs (§4.2).
+// ASCII whitespace (U+0009–U+000D, U+0020) is forbidden in target IDs.
 const ASCII_WHITESPACE_PATTERN = /[\u0009-\u000D\u0020]/;
 
-// A high surrogate without a following low surrogate, or a low surrogate
-// without a preceding high surrogate. Unpaired surrogates cannot serialize
-// to a URL fragment.
+// Unpaired surrogates cannot serialize to a URL fragment.
 const UNPAIRED_SURROGATE_PATTERN = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const ARIA_CURRENT_LOCATION = "location";
 
 const DEFAULT_ROOT_LABEL = "Table of contents";
 
-// The default landmark label occupies the leftmost merge slot, so a
-// consumer-provided aria-label or aria-labelledby wins it (§8.3).
+// The default label occupies the leftmost merge slot, so a consumer aria-label or aria-labelledby wins it.
 const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": DEFAULT_ROOT_LABEL };
 
-// A scroll position within this distance from the surface's maximum counts
-// as "at the bottom" (§6 leaves the sub-pixel tolerance to the
-// implementation). The value is one whole pixel because engines round
-// fractional maximum scroll positions: the tolerance must not strand a
-// bottom state one rounding unit early.
+// One whole pixel of tolerance: engines round fractional maximum scroll
+// positions, so a smaller value could strand a bottom state one rounding unit early.
 const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
 
 const INVALID_COLLECTION_MESSAGE = "Invalid target ID in targetIds: every entry must be a valid, unique target ID.";
@@ -105,16 +88,12 @@ const TOC_LIST_SLOT = "toc-list";
 const TOC_ITEM_SLOT = "toc-item";
 const TOC_LINK_SLOT = "toc-link";
 
-// TocList and TocItem share one empty state; it carries no attributes.
 const EMPTY_TOC_STATE: TocListState = {};
 
-// The empty snapshot the outline hook yields on the server and on a null
-// scope; the stable identity keeps the outline derivation from rebuilding.
+// Stable identity keeps the outline derivation from rebuilding on a null scope.
 const EMPTY_HEADINGS: readonly Heading[] = [];
 
-// Definition order: module doc, then constants, then types. Shared pure
-// helpers sit above their first consumer, a helper with one consumer sits
-// directly below it, and each part's props sit directly above the part.
+// File convention: module doc, constants, types; helpers sit next to their consumer, and each part's props above the part.
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -128,21 +107,16 @@ export interface HeadingGroup extends Heading {
   children: readonly HeadingGroup[];
 }
 
-// The same node shape with mutable children, used while the outline builds;
-// the returned trees still satisfy HeadingGroup.
+// Mutable-children draft node; the returned trees still satisfy HeadingGroup.
 interface HeadingGroupDraft extends Heading {
   children: HeadingGroupDraft[];
 }
 
-// A parsed outline entry: title cleaning has already run, so grouping reads
-// nothing further (§9.2).
 type CleanedHeading = Heading;
 
-// Grid of one measurement: injected into the pure selection step so the
-// crossing rule stays testable without a DOM (§16.1).
 export interface TocTargetGeometry {
   id: string;
-  /** Pixels from the surface top edge down to the target's top edge; `null` when the target is unavailable (§4.6, §6). */
+  /** Pixels from the surface top edge down to the target's top edge; `null` when the target is unavailable. */
   headroomPx: number | null;
 }
 
@@ -152,9 +126,7 @@ export interface TocGeometrySample {
   hasSurfaceBottomReached: boolean;
 }
 
-// Part states are interfaces because `useRenderElement`'s `State extends
-// Record<string, any>` accepts them; the empty structural states are empty
-// interfaces, in the same idiom Base UI's own part states use.
+// Part states are interfaces because useRenderElement's State must extend Record<string, any>; empty ones stay empty.
 export interface TocRootState {
   currentId: string | null;
 }
@@ -172,15 +144,14 @@ export interface TocActions {
 }
 
 interface TocRootContextValue {
-  /** Ordered destination IDs of the owning Root (§4.1); identity is the committed prop value. */
   targetIds: readonly string[];
-  /** The outline the Root built from its `headings` lane; `null` in the `targetIds` lane (§8.3, §8.4). */
+  /** `null` in the `targetIds` lane. */
   outline: readonly HeadingGroup[] | null;
-  /** The current location this Root tracks; `null` before the first crossing (§6). */
+  /** `null` before the first crossing. */
   currentId: string | null;
 }
 
-/** A valid target ID is non-empty, holds no ASCII whitespace, and holds no unpaired surrogate (§4.2). */
+/** A valid target ID is non-empty and holds no ASCII whitespace or unpaired surrogate. */
 export function isValidTargetId(candidate: unknown): candidate is string {
   if (typeof candidate !== "string") return false;
   if (candidate === "") return false;
@@ -188,11 +159,7 @@ export function isValidTargetId(candidate: unknown): candidate is string {
   return !UNPAIRED_SURROGATE_PATTERN.test(candidate);
 }
 
-/**
- * Collection boundary: every entry must be a valid target ID and unique (§4.3).
- * Returns a fresh array: the parser owns the copy, so callers keep reading
- * their own prop value (§4.1).
- */
+/** Throws unless every entry is a valid, unique target ID; returns a fresh array. */
 export function parseTargetCollection(targetIds: readonly unknown[]): readonly string[] {
   const parsedIds: string[] = [];
   const seenIds = new Set<string>();
@@ -205,21 +172,20 @@ export function parseTargetCollection(targetIds: readonly unknown[]): readonly s
   return parsedIds;
 }
 
-/** The activation line offset is a non-negative, finite CSS-pixel number (§6). */
+/** An activation offset is a non-negative, finite CSS-pixel number. */
 export function isValidActivationOffset(candidate: unknown): candidate is number {
   return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0;
 }
 
-/** Offset boundary (§6): parse a non-negative, finite CSS-pixel number or throw (§10). */
+/** Parses an activation offset; throws on an invalid value. */
 export function parseActivationOffset(candidate: unknown): number {
   if (!isValidActivationOffset(candidate)) throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
   return candidate;
 }
 
 /**
- * Pure current-location step (§6): the last crossed target in configured
- * order; when nothing crossed and the surface bottom is reached, the last
- * available target. Unavailable targets participate in neither.
+ * Pure selection step: the last crossed target in configured order; when
+ * nothing crossed and the bottom is reached, the last available target.
  */
 export function selectCurrentTargetId(sample: TocGeometrySample): string | null {
   let lastCrossedId: string | null = null;
@@ -234,7 +200,7 @@ export function selectCurrentTargetId(sample: TocGeometrySample): string | null 
   return null;
 }
 
-/** Trims and collapses whitespace runs; an empty result after cleaning is rejected (§9.1). */
+/** Trims and collapses whitespace runs; throws when the result is empty. */
 export function cleanHeadingTitle(title: string): string {
   const cleaned = title.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
   if (cleaned === "") throw new Error(EMPTY_DISCOVERY_TITLE_MESSAGE);
@@ -251,10 +217,8 @@ function isHeadingLevelValue(candidate: unknown): candidate is HeadingLevel {
 }
 
 /**
- * Pure outline builder (§9.2). An entry at level L groups the following
- * deeper entries until an entry with level ≤ L appears. Skipped levels nest
- * directly under the last shallower entry; a later shallower heading starts a
- * new top-level group; earlier branches are never re-parented.
+ * Pure outline builder: an entry at level L collects the following deeper
+ * entries until a level ≤ L appears; skipped levels nest under the last shallower entry.
  */
 export function buildOutline(headings: readonly Heading[]): readonly HeadingGroup[] {
   const cleanedHeadings = parseOutlineHeadings(headings);
@@ -263,7 +227,6 @@ export function buildOutline(headings: readonly Heading[]): readonly HeadingGrou
   const openGroups: HeadingGroupDraft[] = [];
   for (const entry of cleanedHeadings) {
     const group: HeadingGroupDraft = { id: entry.id, title: entry.title, level: entry.level, children: [] };
-    // The nearest preceding group shallower than this entry becomes its parent.
     while (openGroups.length > 0) {
       const openGroup = openGroups[openGroups.length - 1];
       if (openGroup.level < group.level) break;
@@ -276,19 +239,15 @@ export function buildOutline(headings: readonly Heading[]): readonly HeadingGrou
   return topGroups;
 }
 
-/**
- * Outline boundary: parse consumer-supplied entries once (§9.2); discovery
- * output already satisfies it. Returns the entries in input order with
- * cleaned titles, so grouping above never re-cleans or re-validates.
- */
+// Outline boundary: validate consumer entries and return cleaned copies in
+// input order, so grouping above never re-cleans or re-validates.
 function parseOutlineHeadings(headings: readonly Heading[]): readonly CleanedHeading[] {
   const cleanedHeadings: CleanedHeading[] = [];
   const seenIds = new Set<string>();
   for (const entry of headings) {
     if (!isValidTargetId(entry.id)) throw new Error(INVALID_OUTLINE_ID_MESSAGE_PREFIX + String(entry.id));
     if (!isHeadingLevelValue(entry.level)) throw new Error(INVALID_OUTLINE_LEVEL_MESSAGE);
-    // A JS caller can supply junk inside typed fields; reject a non-string
-    // title explicitly before cleaning runs, so no TypeError escapes (§9.2).
+    // A JS caller can pass a non-string title inside a typed field; reject it before cleaning so no TypeError escapes.
     if (typeof entry.title !== "string") throw new Error(INVALID_OUTLINE_TITLE_MESSAGE);
     const cleanedTitle = cleanHeadingTitle(entry.title);
     if (seenIds.has(entry.id)) throw new Error(DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX + entry.id);
@@ -298,22 +257,15 @@ function parseOutlineHeadings(headings: readonly Heading[]): readonly CleanedHea
   return cleanedHeadings;
 }
 
-/**
- * The tracking-source lanes of `TocRootProps` (§4.1, §8.3): exactly one is
- * present, so the union makes the absent lane unrepresentable.
- */
+/** The Root's tracking lane; the union makes the absent lane unrepresentable. */
 export type TocTrackingSource =
   | { lane: "targetIds"; targetIds: readonly string[] }
   | { lane: "headings"; targetIds: readonly string[]; outline: readonly HeadingGroup[] };
 
 /**
- * Tracking-source boundary (§4.1, §10): parse the Root's lane props once at
- * the root render commit. The `targetIds` lane runs `parseTargetCollection`
- * and owns no outline; the `headings` lane runs `buildOutline` — the single
- * validator for entry shapes (no second parse over the derived ids) — and
- * derives the flat collection from the same entries. Check order: the
- * two-lanes error precedes the absent-lane error, and lane discrimination
- * precedes per-lane parsing.
+ * Tracking boundary: the two-lanes error precedes the absent-lane error, and
+ * lane discrimination precedes per-lane parsing. The `headings` lane builds
+ * the outline and derives its id collection from the entries.
  */
 export function parseTrackingSource(props: {
   targetIds?: readonly string[] | undefined;
@@ -326,8 +278,7 @@ export function parseTrackingSource(props: {
     const outline = buildOutline(headings);
     return {
       lane: "headings",
-      // Grouping validated every id already, so the derived collection is a
-      // plain projection; it never re-runs the collection parser.
+      // buildOutline validated every id, so this projection never re-runs the collection parser.
       targetIds: headings.map((heading) => heading.id),
       outline,
     };
@@ -335,7 +286,7 @@ export function parseTrackingSource(props: {
   throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
 }
 
-/** Document-order heading snapshot with cleaned titles and no layout reads (§9.1). */
+/** Document-order heading snapshot with cleaned titles; it reads no layout. */
 export function discoverHeadings(
   scope: Element,
   options?: { levels?: readonly HeadingLevel[] },
@@ -371,16 +322,10 @@ function readDiscoveryLevels(options?: { levels?: readonly HeadingLevel[] }): re
   for (const value of levels) {
     if (!isHeadingLevelValue(value)) throw new Error(INVALID_DISCOVERY_LEVEL_MESSAGE);
   }
-  // An empty list selects nothing and yields an empty result (§9.1).
   return levels;
 }
 
-/**
- * Collects the heading's visible text: descendants marked `hidden` or
- * `aria-hidden="true"` and `script`/`style` descendants are excluded with
- * their whole subtree; comments contribute nothing. This is the only
- * content read of a heading element; nothing is measured (§9.1).
- */
+// Collects visible heading text; hidden or aria-hidden subtrees, script/style subtrees, and comments contribute nothing.
 function collectTitleText(element: Element, fragments: string[]): void {
   for (const child of element.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
@@ -395,13 +340,7 @@ function collectTitleText(element: Element, fragments: string[]): void {
 }
 
 /**
- * Client-side outline snapshot for consumers (§9.3): discovers the headings
- * of `scope` in a layout effect, one snapshot per scope identity, and groups
- * them through `buildOutline` (§9.2). A `null` scope and every server render
- * yield the empty pair: the module reads no DOM outside effect callbacks
- * (§12). Scope is the only input; options stay on `discoverHeadings`, so a
- * scope identity change is the only re-discovery trigger. Content that
- * mutates under the same element needs an explicit re-discovery (§9.1).
+ * Client-side outline snapshot for `scope`, one discovery per scope identity; a `null` scope and every server render yield the empty pair.
  */
 export function useTocOutline(scope: Element | null): {
   headings: readonly Heading[];
@@ -409,8 +348,7 @@ export function useTocOutline(scope: Element | null): {
 } {
   const [headings, setHeadings] = React.useState<readonly Heading[]>(EMPTY_HEADINGS);
 
-  // Detachment is a state, not a stale snapshot: a null scope yields the
-  // empty pair instead of the previous heading list.
+  // Detachment is a state, not a stale snapshot: a null scope yields the empty pair.
   useIsoLayoutEffect(() => {
     if (scope === null) {
       setHeadings(EMPTY_HEADINGS);
@@ -427,10 +365,8 @@ export function useTocOutline(scope: Element | null): {
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(undefined);
 
 /**
- * Root-owned tracker: resolves targets, measures one geometry sample per
- * scheduled update (§7), applies the pure selection step, and publishes
- * change-only notifications. Effects never run during render; the initial
- * `currentId` is `null` so server and first client render match (§12).
+ * Root-owned tracker: one geometry sample per scheduled update, change-only
+ * notifications, and an initial `currentId` of `null` for SSR parity.
  */
 function useTocTracker(trackerProps: {
   targetIds: readonly string[];
@@ -443,26 +379,20 @@ function useTocTracker(trackerProps: {
 
   const navElementRef = React.useRef<HTMLElement | null>(null);
   const currentIdRef = React.useRef<string | null>(null);
-  // The last configuration commit; measurements read this instead of
-  // render-captured values so a question asked by a scroll event between
-  // the reads and the state write always sees committed props. The lazy
-  // initialization also skips a fresh basket allocation on every render.
+  // The last configuration commit; measurements read it so a scroll-event
+  // question between the reads and the state write sees committed props.
   const committedPropsRef = useRefWithInit(() => ({ targetIds, scrollElement, activationOffset }));
 
-  // Scheduled work is coalesced into at most one measurement per animation
-  // frame (§7): request() clears any previously scheduled call, and
-  // cancel() is idempotent, so the commit-effect cleanups below can cancel
-  // pending work without knowing whether a frame already fired.
+  // Scheduled work coalesces into one measurement per frame: request() clears
+  // the previous call, and cancel() is idempotent, so the commit-effect
+  // cleanups can cancel unconditionally.
   const raf = useAnimationFrame();
 
   const [currentId, setCurrentIdState] = React.useState<string | null>(null);
 
-  // Replacing the callback identity must not re-notify (§7). The stable
-  // trampoline is undefined-safe, so an absent consumer callback is a no-op.
+  // A replaced callback identity must not re-notify, and an absent callback is a no-op.
   const notifyCurrentIdChange = useStableCallback(onCurrentChange);
 
-  // Change-only publication (§7): identical values cause no state write and
-  // no notification.
   const publishCurrentId = useStableCallback((nextId: string | null) => {
     if (currentIdRef.current === nextId) return;
     currentIdRef.current = nextId;
@@ -470,37 +400,25 @@ function useTocTracker(trackerProps: {
     notifyCurrentIdChange(nextId);
   });
 
-  // One scheduled update resolves configured IDs again and reads current
-  // rectangles; there is no position cache and no invalidation system (§7).
   const measureAndPublish = React.useCallback(() => {
     const { targetIds: committedTargetIds, scrollElement: committedScrollElement, activationOffset: committedOffsetPx } = committedPropsRef.current;
     const navElement = navElementRef.current;
-    // Unreachable: the scheduler runs only while an active nav element is
-    // mounted, and cleanup cancels pending work before the element detaches.
+    // Unreachable: the scheduler runs only while an active nav element is mounted, and cleanup cancels pending work first.
     if (navElement === null) return;
 
     const doc = navElement.ownerDocument;
 
-    // Tracking is inactive (scrollElement null, §5). refresh() may still be
-    // called in this state, so the request skips quietly; the commit effect
-    // owns the §4.5 transitions.
+    // Inactive tracking: refresh() may still run, so the request skips quietly.
     if (committedScrollElement === null) return;
 
     const docElement = doc.documentElement;
     let surfaceElement: Element | null = null;
-    // Viewport headroom reads the raw viewport top; element headroom cancels
-    // the surface translation (§6). One variable carries both forms.
     let surfaceTopPx = 0;
     let hasSurfaceBottomReached = false;
 
-    // The document's root element tracks as the viewport (§5, §6); the mode
-    // note at the commit effect owns the full rationale.
     if (committedScrollElement === undefined || committedScrollElement === docElement) {
-      // Viewport mode (§6): the layout viewport's top edge is 0, and the
-      // bottom exception needs the document viewport's overflow state.
       const view = doc.defaultView;
-      // A document without a window cannot be measured, and tracking is
-      // inactive there (§4.5): publish null instead of keeping a stale value.
+      // A document without a window cannot be measured; publish null instead of keeping a stale value.
       if (view === null) {
         publishCurrentId(null);
         return;
@@ -509,16 +427,12 @@ function useTocTracker(trackerProps: {
         docElement.scrollHeight > docElement.clientHeight
         && view.scrollY >= docElement.scrollHeight - docElement.clientHeight - BOTTOM_MAX_SCROLL_TOLERANCE_PX;
     } else {
-      // Element mode: no usable layout box leaves tracking inactive until a
-      // later event observes a box (§5, §4.5); publishing null is immediate.
       if (committedScrollElement.clientHeight <= 0) {
         publishCurrentId(null);
         return;
       }
       surfaceElement = committedScrollElement;
-      // The surface top edge is the client-area top edge, not the border-box
-      // top: clientTop is the border-top width in px. Integer rounding at
-      // fractional borders is acceptable (§6).
+      // The surface top edge is the client-area edge, so clientTop adds the border-top width in px.
       surfaceTopPx = committedScrollElement.getBoundingClientRect().top + committedScrollElement.clientTop;
       hasSurfaceBottomReached =
         committedScrollElement.scrollHeight > committedScrollElement.clientHeight
@@ -532,10 +446,8 @@ function useTocTracker(trackerProps: {
         targetsGeometry.push({ id: targetId, headroomPx: null });
         continue;
       }
-      // Ownership (§5): a resolved target outside its scroller is a
-      // configuration error, thrown while the measurement runs (§10). The
-      // target must be a proper DOM descendant: contains() is inclusive, so
-      // the scroller element itself is excluded.
+      // Ownership: a target outside its scroller throws while the measurement
+      // runs; contains() is inclusive, so the scroller itself is excluded.
       if (surfaceElement !== null) {
         const isTargetOwnedByScroller = targetElement !== surfaceElement && surfaceElement.contains(targetElement);
         if (!isTargetOwnedByScroller) throw new Error(OWNERSHIP_ERROR_MESSAGE);
@@ -550,16 +462,11 @@ function useTocTracker(trackerProps: {
     );
   }, [publishCurrentId]);
 
-  // Coalescing (§7) comes from request(): it clears the previous call
-  // instead of stacking frames.
   const scheduleMeasurement = React.useCallback(() => {
     raf.request(measureAndPublish);
   }, [measureAndPublish, raf]);
 
-  // refresh() re-resolves targets and remeasures, coalescing like any other
-  // scheduled update; it returns nothing and never scrolls (§8.3). The
-  // handle attaches after commit; unmount nulls it without touching newer
-  // handles.
+  // refresh() remeasures and never scrolls; the unmount cleanup nulls the handle only while it is current.
   useIsoLayoutEffect(() => {
     if (actionsRef === undefined) return;
     const actions: TocActions = { refresh: scheduleMeasurement };
@@ -569,39 +476,26 @@ function useTocTracker(trackerProps: {
     };
   }, [actionsRef, scheduleMeasurement]);
 
-  // The configuration commit: §4.5 immediate-null transitions, listener
-  // wiring for the one tracked surface, and one coalesced measurement (§7.4).
   useIsoLayoutEffect(() => {
-    // Immediate transitions (§4.5): a former current ID that left the
-    // collection, an emptied collection, and an inactive surface publish
-    // null without waiting for a measurement.
+    // Immediate transitions: an inactive surface or a departed current ID publishes null without a measurement.
     if (scrollElement === null) publishCurrentId(null);
     else if (currentIdRef.current !== null && !targetIds.includes(currentIdRef.current)) publishCurrentId(null);
 
     committedPropsRef.current = { targetIds, scrollElement, activationOffset };
 
-    // Inactive tracking owns no listeners and schedules nothing (§5, §12).
     if (scrollElement === null) return;
-    // First client commit schedules the initial measurement (§7.1).
     scheduleMeasurement();
 
     const navElement = navElementRef.current;
-    // Unreachable: refs attach before layout effects, and the nav element
-    // always renders.
+    // Unreachable: refs attach before layout effects, and the nav element always renders.
     if (navElement === null) return;
     const doc = navElement.ownerDocument;
 
-    // Viewport mode covers an omitted `scrollElement` and also the tracking
-    // document's root element. Per CSSOM View, root-scroller `scroll` events
-    // target the Document, so a listener on `documentElement` never fires,
-    // and `documentElement`'s bounding-rect top is the document origin, not
-    // the viewport top. The root element therefore tracks exactly like the
-    // omitted element (§5, §6), and element-mode ownership never applies.
+    // The root element tracks like an omitted `scrollElement`: root-scroller
+    // events target the Document, and its bounding-rect top is the document origin.
     if (scrollElement === undefined || scrollElement === doc.documentElement) {
-      // Viewport mode: the layout viewport's scroll and resize (§7.2–7.3).
       const view = doc.defaultView;
-      // A document without a window cannot carry listeners, and tracking is
-      // inactive there (§4.5): publish null instead of keeping a stale value.
+      // A document without a window cannot carry listeners; publish null instead of keeping a stale value.
       if (view === null) {
         publishCurrentId(null);
         return;
@@ -615,13 +509,10 @@ function useTocTracker(trackerProps: {
       };
     }
 
-    // Element mode: the scroller's scroll and its box resizes (§7.2–7.3).
-    // No usable box at commit leaves tracking inactive right away (§4.5).
     if (scrollElement.clientHeight <= 0) publishCurrentId(null);
     const detachScrollEvent = addEventListener(scrollElement, "scroll", scheduleMeasurement, { passive: true });
     const surfaceObserver = new ResizeObserver(() => {
-      // The 0→size box transition reactivates tracking; a lost box
-      // deactivates it immediately (§7.3, §4.5).
+      // A 0→size box transition reactivates tracking; a lost box deactivates it at once.
       if (scrollElement.clientHeight > 0) scheduleMeasurement();
       else publishCurrentId(null);
     });
@@ -636,12 +527,8 @@ function useTocTracker(trackerProps: {
   return { currentId, navElementRef };
 }
 
-// The shared composition interface (§8.2): native props merge, consumer
-// handlers run first, and className/style accept state-function forms.
-// React 19 delivers `ref` inside the props object, and these interfaces
-// carry it through `ComponentPropsWithRef`. Each part destructures `ref`
-// and passes it to `useRenderElement`'s `ref` param: `mergeProps` ignores
-// `ref`, so an unde-structured ref would be silently dropped.
+// The shared composition interface: native props merge, and each part
+// destructures `ref` because `mergeProps` ignores it and would silently drop it.
 type TocCompositionProps<ElementType extends React.ElementType, State, OmittedKeys extends string = never> = Omit<
   React.ComponentPropsWithRef<ElementType>,
   "className" | "style" | OmittedKeys
@@ -651,39 +538,25 @@ type TocCompositionProps<ElementType extends React.ElementType, State, OmittedKe
   style?: React.CSSProperties | ((state: State) => React.CSSProperties | undefined) | undefined;
 };
 
-/** Root props (§8.3). */
 export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
-  /**
-   * Ordered destination IDs (§4.1–§4.3) — the `targetIds` lane. Mutually
-   * exclusive with `headings`: exactly one lane is provided (§10). Immutable
-   * snapshot; replace to reconfigure.
-   */
+  /** The `targetIds` lane; mutually exclusive with `headings`. Immutable snapshot, replace it to reconfigure. */
   targetIds?: readonly string[] | undefined;
-  /**
-   * Flat heading entries (§9.1) — the `headings` lane. Mutually exclusive
-   * with `targetIds` (§10). Root derives the flat collection from the entry
-   * ids and builds the outline through `buildOutline` (§9.2).
-   */
+  /** The `headings` lane, mutually exclusive with `targetIds`; the Root derives the collection and outline. */
   headings?: readonly Heading[] | undefined;
-  /** The tracked scrolling surface. Omit for the document viewport; `null` deactivates tracking (§5). */
+  /** The tracked scrolling surface; omit for the document viewport, pass `null` to deactivate tracking. */
   scrollElement?: Element | null | undefined;
-  /** CSS pixels below the surface top edge that count as "reached" (§6). */
+  /** CSS pixels below the surface top edge that count as reached. */
   activationOffset?: number | undefined;
-  /** Change-only notification of the current target ID (§7). */
+  /** Change-only notification of the current target ID. */
   onCurrentChange?: ((currentId: string | null) => void) | undefined;
-  /** Receives `{ refresh(): void }` (§8.3). */
+  /** Receives the imperative `refresh()` handle. */
   actionsRef?: React.RefObject<TocActions | null> | undefined;
 }
 
-// Root state mapping: `currentId` must not emit a `data-current-id`
-// attribute; the root exposes `data-has-current` instead (§8.3).
+// `currentId` must not emit a `data-current-id` attribute; the root exposes `data-has-current` instead.
 const TOC_ROOT_STATE_ATTRIBUTES_MAPPING = { currentId: () => null };
 
-/**
- * The tracked navigation landmark (§8.3). Owns the tracker, coalescing, and
- * notifications; renders a `<nav>` with a default label consumers can
- * override through `aria-label`/`aria-labelledby`.
- */
+/** The tracked navigation landmark; renders a `<nav>` with a default label consumers can override. */
 export function TocRoot(componentProps: TocRootProps) {
   const {
     targetIds,
@@ -699,11 +572,8 @@ export function TocRoot(componentProps: TocRootProps) {
     ...elementProps
   } = componentProps;
 
-  // Input boundaries (§4.3, §10): synchronous throws at the root render
-  // commit. Parsing once per render keeps the commit effect's dependency
-  // identity (§7.4): the parsed collection is fresh only when its source
-  // prop value is, and the headings lane derives its collection and outline
-  // on the same `headings` identity.
+  // Input boundaries: parse once per render so the commit effect keeps
+  // dependency identity; the collection is fresh only when its source prop value is.
   const trackedSource = React.useMemo(
     () => parseTrackingSource({ targetIds, headings }),
     [targetIds, headings],
@@ -744,41 +614,30 @@ export function TocRoot(componentProps: TocRootProps) {
     ],
   });
 
-  // The provider wraps the tracked elements; unmounting a presentation never
-  // changes what is tracked (§4.1).
   return <TocRootContext.Provider value={contextValue}>{renderedElement}</TocRootContext.Provider>;
 }
 
-/** List props (§8.4): structural part with an empty state; function children map the Root-owned outline. */
+/** Structural part; function children map the Root-owned outline. */
 export interface TocListProps extends TocCompositionProps<"ol", TocListState, "children"> {
   /**
-   * Plain children render consumer-authored content as-is (§8.4). A function
-   * child receives one outline entry per call (Select.Value shape) in
-   * document order and maps the `headings` lane's outline onto one flat
-   * `<ol>` (§8.5); the part keys each mapped child from the entry id, so the
-   * callback output never needs a key. Function children require a
-   * Root-owned outline.
+   * Function children receive one outline entry per call in document order;
+   * the part authors each key from the entry id, so the callback needs no key.
    */
   children?: React.ReactNode | ((entry: Heading) => React.ReactNode) | undefined;
 }
 
-/** A flat ordered list of outline entries (§8.4, §8.5). */
+/** A flat ordered list of outline entries. */
 export function TocList(componentProps: TocListProps) {
   const rootContext = React.useContext(TocRootContext);
   const { className, style, render, ref, children: childrenProp, ...elementProps } = componentProps;
 
-  // Plain children pass through untouched in both lanes and outside any
-  // Root. A function child maps the Root-owned outline (§8.5), so the
-  // `targetIds` lane — which owns no outline — is a configuration error.
+  // A function child maps the Root-owned outline, so the `targetIds` lane, which owns none, is a configuration error.
   let children = childrenProp;
   if (typeof children === "function") {
-    // The callback reads a const, not the reassigned `children` binding.
+    // The callback must not read the reassigned `children` binding.
     const renderEntry = children;
     const outline = rootContext === undefined ? null : rootContext.outline;
     if (outline === null) throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
-    // One callback call per heading in document order. The part authors each
-    // key from the entry id, so the consumer's callback output carries no
-    // key (§8.5).
     children = flattenOutline(outline).map((entry) => (
       <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
     ));
@@ -794,11 +653,8 @@ export function TocList(componentProps: TocListProps) {
   });
 }
 
-/**
- * Flattens the outline in pre-order: a group precedes its children, and a
- * subtree finishes before the next sibling — document order. Heading levels
- * cap the depth at six, so the recursion is bounded.
- */
+// Flattens in pre-order: a group precedes its children, and a subtree
+// finishes before the next sibling; heading levels cap the recursion at six.
 function flattenOutline(
   outline: readonly HeadingGroup[],
   flatEntries: Heading[] = [],
@@ -810,10 +666,9 @@ function flattenOutline(
   return flatEntries;
 }
 
-/** Item props (§8.4): structural part with an empty state. */
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
-/** An entry of the flat outline (§8.4); the fast lane renders one flat item per heading, and nested lists are consumer-authored from `buildOutline` when wanted (§8.5). */
+/** An entry of the flat outline; nested lists are consumer-authored from `buildOutline` when wanted. */
 export function TocItem(componentProps: TocItemProps) {
   const { className, style, render, ref, ...elementProps } = componentProps;
 
@@ -827,22 +682,17 @@ export function TocItem(componentProps: TocItemProps) {
   });
 }
 
-/** Link props (§8.6): component-owned `href`/`aria-current` cannot be re-set by typed consumers (§4.4). */
 export interface TocLinkProps extends TocCompositionProps<"a", TocLinkState, "href" | "aria-current"> {
-  /** The canonical target ID (§4.4): must be valid and a member of the root collection (§10). */
+  /** Must be a valid target ID in the root collection, or `TocLink` throws. */
   targetId: string;
 }
 
-/**
- * A native fragment link to one configured target (§8.6). Component-owned
- * `href` and `aria-current` win over conflicting consumer values at runtime
- * (§4.4); consumer handlers stay merged on the link.
- */
+/** A fragment link to one configured target; component-owned `href` and `aria-current` beat consumer values. */
 export function TocLink(componentProps: TocLinkProps) {
   const rootContext = React.useContext(TocRootContext);
   const { targetId, className, style, render, ref, ...elementProps } = componentProps;
 
-  // Boundaries (§10): identity first, then context, then membership.
+  // Check order: identity, then context, then membership.
   if (!isValidTargetId(targetId)) throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
   if (rootContext === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
   if (!rootContext.targetIds.includes(targetId)) throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
@@ -852,8 +702,7 @@ export function TocLink(componentProps: TocLinkProps) {
   return useRenderElement<TocLinkState, HTMLAnchorElement, "a">("a", componentProps, {
     state,
     ref,
-    // The component owns the fragment encoding and the current marker (§4.4);
-    // the last member keeps both beating conflicting consumer values.
+    // The last props member keeps the component-owned fragment encoding and current marker beating consumer values.
     props: [
       elementProps,
       (props) => ({

@@ -61,7 +61,5 @@
         "node_modules",
         "playground",
         "dist",
-        /* Reference snapshots: not product source and not resolvable from the installed dependencies. */
-        "src/references",
     ],
 }

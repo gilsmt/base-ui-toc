@@ -21,9 +21,7 @@ const INITIAL_TARGET_SECTIONS: readonly TargetSection[] = [
   { id: "limits", title: "Limits" },
 ];
 
-// Hiding sets display: none on one subtree: its heading stays in the DOM, so
-// discovery keeps including it and the tracker meets it as unavailable
-// instead of as an error (README §target IDs).
+// Hiding leaves the heading in the DOM, so discovery keeps it and the tracker meets it as unavailable, not as an error.
 const HIDDEN_SECTION_ID = "hidden-target";
 
 const ADDED_SECTION_ID_PREFIX = "added";
@@ -41,11 +39,8 @@ export function DynamicTargets() {
   const [hiddenSectionId, setHiddenSectionId] = React.useState<string | null>(null);
   const [headings, setHeadings] = React.useState<readonly Heading[]>([]);
 
-  // Discovery re-runs per committed collection change; the hidden class does
-  // not change the snapshot, because hidden headings are still discovered.
-  // Manual discovery stays here: the section content mutates under the same
-  // article element, and the snapshot hook re-discovers only on a scope
-  // identity change (README §Server rendering).
+  // Manual discovery: section content mutates under the same article element,
+  // and the snapshot hook re-discovers only on a scope identity change.
   React.useLayoutEffect(() => {
     const article = articleRef.current;
     if (article === null) {
@@ -63,8 +58,7 @@ export function DynamicTargets() {
           <button type="button" onClick={handleToggleHidden}>Toggle hidden</button>
         </div>
         <TocRoot headings={headings} className="pg-dt-nav">
-          {/* One flat map in document order: the library authors keys from
-              the entry ids; indent by heading level. */}
+          {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (
               <TocItem style={{ paddingInlineStart: `${(entry.level - 2) * 0.75}rem` }}>
@@ -100,8 +94,7 @@ export function DynamicTargets() {
 
   function handleAddSection() {
     const nextOrdinal = addedSectionOrdinal + 1;
-    // The ordinal only grows, so a section added after a removal keeps an
-    // id distinct from every id the page has ever printed.
+    // The ordinal only grows, so an added section keeps an id distinct from every id the page has printed.
     setAddedSectionOrdinal(nextOrdinal);
     setTargetSections((currentSections) => [
       ...currentSections,

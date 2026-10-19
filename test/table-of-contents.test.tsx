@@ -138,17 +138,14 @@ describe("selectCurrentTargetId", () => {
   });
 
   test("skips unavailable targets for both crossing and the bottom exception", () => {
-    // The absent target crosses nothing and cannot be the "last available" one.
     expect(selectCurrentTargetId(sample([geometry("b", null), geometry("c", 200)], 20, false))).toBe(null);
     expect(selectCurrentTargetId(sample([geometry("b", null), geometry("c", 200)], 20, true))).toBe("c");
-    // With a crossing present, the crossing wins regardless of the bottom.
     expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", null), geometry("c", 200)], 20, true))).toBe("a");
   });
 
   test("applies the bottom exception only when no target crossed and the bottom is reached", () => {
     expect(selectCurrentTargetId(sample([geometry("a", 100), geometry("b", 80)], 20, true))).toBe("b");
     expect(selectCurrentTargetId(sample([geometry("a", 100), geometry("b", 80)], 20, false))).toBe(null);
-    // A crossing wins over the bottom exception.
     expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", 80)], 20, true))).toBe("a");
   });
 
@@ -361,7 +358,6 @@ describe("parseTrackingSource", () => {
   });
 
   test("the headings lane validates through buildOutline only", () => {
-    // Invalid entry shapes and duplicates surface from the outline boundary.
     expect(parse({ headings: [heading("sp ace", 2, "Ok")] })).toThrow();
     expect(parse({ headings: [heading("dup", 2, "Dup"), heading("dup", 3, "Dup again")] })).toThrow();
     expect(parse({ headings: [{ ...heading("ok", 2, "Ok"), level: 0 } as unknown as Heading] })).toThrow();
@@ -401,22 +397,18 @@ describe("SSR smoke", () => {
       ),
     );
 
-    // Slot attributes and the default landmark label.
     expect(markup).toContain(`data-slot="toc-root"`);
     expect(markup).toContain(`data-slot="toc-list"`);
     expect(markup).toContain(`data-slot="toc-item"`);
     expect(markup).toContain(`data-slot="toc-link"`);
     expect(markup).toContain(`aria-label="Table of contents"`);
-    // Derived hrefs are pure functions of the target ID.
     expect(markup).toContain(`href="#intro"`);
     expect(markup).toContain(`href="#deep-id"`);
     expect(markup).toContain('href="#caf%C3%A9"');
-    // No current marking before any measurement: server and first client render match.
     expect(markup).not.toContain(`aria-current`);
     expect(markup).not.toContain("data-current");
     // No suppressable state-derived attribute.
     expect(markup).not.toContain("data-current-id");
-    // The nav renders an ordered list structure.
     expect(markup.startsWith("<nav")).toBe(true);
     expect(markup).toContain("<ol");
     expect(markup).toContain("<li");
@@ -492,8 +484,7 @@ describe("SSR render boundaries", () => {
   });
 
   test("component-owned href and aria-current beat conflicting consumer values", () => {
-    // A JS caller can pass the component-owned props that TS consumers
-    // cannot set; the component-owned values must win at runtime (§4.4).
+    // A JS caller can pass component-owned props; the component values must win at runtime.
     const conflictingProps = { targetId: "intro", href: "#conflict", "aria-current": "page" } as unknown as TocLinkProps;
     const markup = renderToStaticMarkup(
       React.createElement(
@@ -502,7 +493,6 @@ describe("SSR render boundaries", () => {
         React.createElement(TocLink, conflictingProps, "Intro"),
       ),
     );
-    // The derived fragment encoding wins, and the consumer values vanish.
     expect(markup).toContain(`href="#intro"`);
     expect(markup).not.toContain(`href="#conflict"`);
     expect(markup).not.toContain(`aria-current="page"`);
@@ -523,7 +513,6 @@ const LANE_HEADINGS: readonly Heading[] = [
 ];
 
 const laneEntries = () =>
-  // Flat presentation entries: one keyed item per heading, as consumers map.
   LANE_HEADINGS.map((entry) =>
     React.createElement(
       TocItem,
@@ -545,7 +534,6 @@ describe("SSR headings lane", () => {
       ),
     );
 
-    // The lane is invisible in markup: identical hrefs, slots, and label.
     expect(headingsMarkup).toBe(targetIdsMarkup);
     expect(headingsMarkup).toContain(`href="#intro"`);
     expect(headingsMarkup).toContain('href="#cookbook"');
@@ -560,8 +548,7 @@ describe("SSR headings lane", () => {
   });
 });
 
-// Mixed-level outline (§9.2): a skipped level nests the h5 directly under
-// the h3 above it, and a later shallower heading starts a second top group.
+// Mixed-level outline: a skipped level nests the h5 under the h3 above it.
 const GROUP_HEADINGS: readonly Heading[] = [
   heading("intro", 2, "Intro"),
   heading("setup", 3, "Setup"),
@@ -570,8 +557,7 @@ const GROUP_HEADINGS: readonly Heading[] = [
   heading("faq-links", 3, "Links"),
 ];
 
-// The callback output carries no key: TocList authors every key from the
-// entry ids (§8.5).
+// The callback output carries no key: TocList authors it from the entry id.
 const flatItemForEntry = (entry: Heading): React.ReactElement =>
   React.createElement(
     TocItem,
@@ -595,9 +581,7 @@ describe("SSR TocList function children", () => {
       ),
     );
 
-    // One callback call per heading, in pre-order = document order.
     expect(receivedIds).toEqual(["intro", "setup", "setup-keys", "faq", "faq-links"]);
-    // One flat list, one item and one link per heading; no nested list.
     expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
     expect((markup.match(/data-slot="toc-item"/g) ?? []).length).toBe(5);
     expect((markup.match(/data-slot="toc-link"/g) ?? []).length).toBe(5);
@@ -615,8 +599,7 @@ describe("SSR TocList function children", () => {
       consoleErrorCalls.push(args);
     };
     try {
-      // The callback output carries no key: the part authors it, so React
-      // emits no missing-key warning during the server render.
+      // The part authors the keys, so no missing-key warning may reach console.error.
       renderToStaticMarkup(
         React.createElement(
           TocRoot,
