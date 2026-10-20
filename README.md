@@ -119,7 +119,7 @@ Two synchronous helpers and one hook come with the parts, and all three are disp
 - `buildOutline` groups flat headings into a nested outline.
 - `useTocOutline` packages discovery and grouping into one client-side hook.
 
-The helpers do not mutate their inputs or the document, and they return fresh values. They do not measure layout, so visually hidden headings are included. Neither helper runs during component rendering.
+The helpers do not mutate their inputs or the document, and they return fresh values. They do not measure layout, so visually hidden headings are included. No helper reads the DOM while rendering: `discoverHeadings` runs in a layout effect, and `buildOutline` is value-only, so it may run during a render.
 
 ### `discoverHeadings`
 
@@ -162,7 +162,7 @@ const [article, setArticle] = useState<HTMLElement | null>(null);
 const { headings, outline } = useTocOutline(article);
 ```
 
-A `null` or unmounted scope yields the empty pair. Scope is the only input, so a scope identity change is the only re-discovery trigger; content that mutates under the same element re-discovers itself (like the dynamic-targets playground variant). On the server, every render yields the empty pair, because layout effects never run there and no `document` read escapes the effect callbacks.
+A `null` or unmounted scope yields the empty pair. Scope is the only input, so a scope identity change is the only re-discovery trigger; the hook does not watch the DOM, so content that mutates under the same element needs an explicit `discoverHeadings` call (like the dynamic-targets playground variant). On the server, every render yields the empty pair, because layout effects never run there and no `document` read escapes the effect callbacks.
 
 The layout effect — not a render-time read — is deliberate: renders rerun under StrictMode and concurrency and must depend only on props and state; the scanned article usually renders in a sibling subtree that does not exist during the navigation's own render; and the server holds no `document`. The hook is that after-commit-before-paint slot, packaged.
 
