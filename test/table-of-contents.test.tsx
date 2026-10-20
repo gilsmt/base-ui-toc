@@ -397,10 +397,6 @@ describe("SSR smoke", () => {
       ),
     );
 
-    expect(markup).toContain(`data-slot="toc-root"`);
-    expect(markup).toContain(`data-slot="toc-list"`);
-    expect(markup).toContain(`data-slot="toc-item"`);
-    expect(markup).toContain(`data-slot="toc-link"`);
     expect(markup).toContain(`aria-label="Table of contents"`);
     expect(markup).toContain(`href="#intro"`);
     expect(markup).toContain(`href="#deep-id"`);
@@ -417,7 +413,7 @@ describe("SSR smoke", () => {
   test("renders the empty collection as an empty landmark", () => {
     const markup = renderToStaticMarkup(React.createElement(TocRoot, { targetIds: [] }));
 
-    expect(markup).toContain(`data-slot="toc-root"`);
+    expect(markup.startsWith("<nav")).toBe(true);
     expect(markup).toContain(`aria-label="Table of contents"`);
   });
 });
@@ -542,7 +538,7 @@ describe("SSR headings lane", () => {
   test("renders an empty headings list as an empty landmark", () => {
     const markup = renderToStaticMarkup(React.createElement(TocRoot, { headings: [] }));
 
-    expect(markup).toContain(`data-slot="toc-root"`);
+    expect(markup.startsWith("<nav")).toBe(true);
     expect(markup).toContain(`aria-label="Table of contents"`);
     expect(markup).not.toContain("href=");
   });
@@ -582,9 +578,9 @@ describe("SSR TocList function children", () => {
     );
 
     expect(receivedIds).toEqual(["intro", "setup", "setup-keys", "faq", "faq-links"]);
-    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
-    expect((markup.match(/data-slot="toc-item"/g) ?? []).length).toBe(5);
-    expect((markup.match(/data-slot="toc-link"/g) ?? []).length).toBe(5);
+    expect((markup.match(/<ol/g) ?? []).length).toBe(1);
+    expect((markup.match(/<li/g) ?? []).length).toBe(5);
+    expect((markup.match(/<a /g) ?? []).length).toBe(5);
     const fragmentPositions = ["#intro", "#setup", "#setup-keys", "#faq", "#faq-links"].map((fragment) =>
       markup.indexOf(`href="${fragment}"`),
     );
@@ -629,7 +625,7 @@ describe("SSR TocList function children", () => {
       ),
     );
 
-    expect((markup.match(/data-slot="toc-list"/g) ?? []).length).toBe(1);
+    expect((markup.match(/<ol/g) ?? []).length).toBe(1);
     expect(markup).not.toContain("href=");
     expect(callbackCalls).toBe(0);
   });

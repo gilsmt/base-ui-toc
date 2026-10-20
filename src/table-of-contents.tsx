@@ -9,8 +9,6 @@ import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
-/** Unstyled in-page navigation: `TocRoot` tracks one current location in a scrolling surface. See SPEC.md. */
-
 const MIN_HEADING_LEVEL = 1;
 const MAX_HEADING_LEVEL = 6;
 
@@ -34,25 +32,17 @@ const TITLE_EXCLUDED_TAG_NAMES: ReadonlySet<string> = new Set([
     "style",
 ]);
 
-// Whitespace runs inside a heading title collapse to one space.
 const TITLE_WHITESPACE_RUN_PATTERN = /\s+/g;
 
-// ASCII whitespace (U+0009–U+000D, U+0020) is forbidden in target IDs.
 const ASCII_WHITESPACE_PATTERN = /[\u0009-\u000D\u0020]/;
 
-// Unpaired surrogates cannot serialize to a URL fragment.
 const UNPAIRED_SURROGATE_PATTERN =
     /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const ARIA_CURRENT_LOCATION = "location";
 
-const DEFAULT_ROOT_LABEL = "Table of contents";
+const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": "Table of contents" };
 
-// The default label occupies the leftmost merge slot, so a consumer aria-label or aria-labelledby wins it.
-const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": DEFAULT_ROOT_LABEL };
-
-// One whole pixel of tolerance: engines round fractional maximum scroll
-// positions, so a smaller value could strand a bottom state one rounding unit early.
 const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
 
 const INVALID_COLLECTION_MESSAGE =
@@ -87,8 +77,8 @@ const INVALID_DISCOVERY_ID_MESSAGE_PREFIX = "Invalid target ID on heading: ";
 
 const DUPLICATE_DISCOVERY_ID_MESSAGE_PREFIX = "Duplicate heading ID: ";
 
-const EMPTY_DISCOVERY_TITLE_MESSAGE =
-    "Heading title is empty after cleaning excluded content and whitespace.";
+const EMPTY_HEADING_TITLE_MESSAGE =
+    "Heading title is empty after whitespace cleaning.";
 
 const INVALID_OUTLINE_ID_MESSAGE_PREFIX =
     "Invalid heading ID in buildOutline input: ";
@@ -102,17 +92,9 @@ const INVALID_OUTLINE_TITLE_MESSAGE =
 const DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX =
     "Duplicate heading ID in buildOutline input: ";
 
-const TOC_ROOT_SLOT = "toc-root";
-const TOC_LIST_SLOT = "toc-list";
-const TOC_ITEM_SLOT = "toc-item";
-const TOC_LINK_SLOT = "toc-link";
+const EMPTY_PART_STATE: Record<string, never> = {};
 
-const EMPTY_TOC_STATE: TocListState = {};
-
-// Stable identity keeps the outline derivation from rebuilding on a null scope.
 const EMPTY_HEADINGS: readonly Heading[] = [];
-
-// File convention: module doc, constants, types; helpers sit next to their consumer, and each part's props above the part.
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -130,8 +112,6 @@ export interface HeadingGroup extends Heading {
 interface HeadingGroupDraft extends Heading {
     children: HeadingGroupDraft[];
 }
-
-type CleanedHeading = Heading;
 
 export interface TocTargetGeometry {
     id: string;
@@ -164,9 +144,7 @@ export interface TocActions {
 
 interface TocRootContextValue {
     targetIds: readonly string[];
-    /** `null` in the `targetIds` lane. */
     outline: readonly HeadingGroup[] | null;
-    /** `null` before the first crossing. */
     currentId: string | null;
 }
 
@@ -207,7 +185,7 @@ export function isValidActivationOffset(
 }
 
 /** Parses an activation offset; throws on an invalid value. */
-export function parseActivationOffset(candidate: unknown): number {
+function parseActivationOffset(candidate: unknown): number {
     if (!isValidActivationOffset(candidate))
         throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
     return candidate;
@@ -236,7 +214,7 @@ export function selectCurrentTargetId(
 /** Trims and collapses whitespace runs; throws when the result is empty. */
 export function cleanHeadingTitle(title: string): string {
     const cleaned = title.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
-    if (cleaned === "") throw new Error(EMPTY_DISCOVERY_TITLE_MESSAGE);
+    if (cleaned === "") throw new Error(EMPTY_HEADING_TITLE_MESSAGE);
     return cleaned;
 }
 
@@ -283,8 +261,8 @@ export function buildOutline(
 // input order, so grouping above never re-cleans or re-validates.
 function parseOutlineHeadings(
     headings: readonly Heading[],
-): readonly CleanedHeading[] {
-    const cleanedHeadings: CleanedHeading[] = [];
+): readonly Heading[] {
+    const cleanedHeadings: Heading[] = [];
     const seenIds = new Set<string>();
     for (const entry of headings) {
         if (!isValidTargetId(entry.id))
@@ -393,7 +371,7 @@ function readDiscoveryLevels(options?: {
     return levels;
 }
 
-// Collects visible heading text; hidden or aria-hidden subtrees, script/style subtrees, and comments contribute nothing.
+// Excludes `hidden` and `aria-hidden="true"` subtrees, script/style, and comments.
 function collectTitleText(element: Element, fragments: string[]): void {
     for (const child of element.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
@@ -423,7 +401,7 @@ export function useTocOutline(scope: Element | null): {
     const [headings, setHeadings] =
         React.useState<readonly Heading[]>(EMPTY_HEADINGS);
 
-    // Detachment is a state, not a stale snapshot: a null scope yields the empty pair.
+    // Clear the snapshot when the scope detaches.
     useIsoLayoutEffect(() => {
         if (scope === null) {
             setHeadings(EMPTY_HEADINGS);
@@ -440,6 +418,18 @@ export function useTocOutline(scope: Element | null): {
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(
     undefined,
 );
+
+function hasReachedBottom(
+    scrollHeightPx: number,
+    clientHeightPx: number,
+    scrollOffsetPx: number,
+): boolean {
+    return (
+        scrollHeightPx > clientHeightPx &&
+        scrollOffsetPx >=
+            scrollHeightPx - clientHeightPx - BOTTOM_MAX_SCROLL_TOLERANCE_PX
+    );
+}
 
 /**
  * Root-owned tracker: one geometry sample per scheduled update, change-only
@@ -497,7 +487,7 @@ function useTocTracker(trackerProps: {
             activationOffset: committedOffsetPx,
         } = committedPropsRef.current;
         const navElement = navElementRef.current;
-        // Unreachable: the scheduler runs only while an active nav element is mounted, and cleanup cancels pending work first.
+        // A refresh() handle retained past unmount can schedule this after the ref clears.
         if (navElement === null) return;
 
         const doc = navElement.ownerDocument;
@@ -520,12 +510,11 @@ function useTocTracker(trackerProps: {
                 publishCurrentId(null);
                 return;
             }
-            hasSurfaceBottomReached =
-                docElement.scrollHeight > docElement.clientHeight &&
-                view.scrollY >=
-                    docElement.scrollHeight -
-                        docElement.clientHeight -
-                        BOTTOM_MAX_SCROLL_TOLERANCE_PX;
+            hasSurfaceBottomReached = hasReachedBottom(
+                docElement.scrollHeight,
+                docElement.clientHeight,
+                view.scrollY,
+            );
         } else {
             if (committedScrollElement.clientHeight <= 0) {
                 publishCurrentId(null);
@@ -536,13 +525,11 @@ function useTocTracker(trackerProps: {
             surfaceTopPx =
                 committedScrollElement.getBoundingClientRect().top +
                 committedScrollElement.clientTop;
-            hasSurfaceBottomReached =
-                committedScrollElement.scrollHeight >
-                    committedScrollElement.clientHeight &&
-                committedScrollElement.scrollTop >=
-                    committedScrollElement.scrollHeight -
-                        committedScrollElement.clientHeight -
-                        BOTTOM_MAX_SCROLL_TOLERANCE_PX;
+            hasSurfaceBottomReached = hasReachedBottom(
+                committedScrollElement.scrollHeight,
+                committedScrollElement.clientHeight,
+                committedScrollElement.scrollTop,
+            );
         }
 
         const targetsGeometry: TocTargetGeometry[] = [];
@@ -561,12 +548,15 @@ function useTocTracker(trackerProps: {
                 if (!isTargetOwnedByScroller)
                     throw new Error(OWNERSHIP_ERROR_MESSAGE);
             }
-            const targetRect = targetElement.getBoundingClientRect();
-            const headroomPx =
-                targetElement.getClientRects().length > 0
-                    ? targetRect.top - surfaceTopPx
-                    : null;
-            targetsGeometry.push({ id: targetId, headroomPx });
+            if (targetElement.getClientRects().length === 0) {
+                targetsGeometry.push({ id: targetId, headroomPx: null });
+                continue;
+            }
+            targetsGeometry.push({
+                id: targetId,
+                headroomPx:
+                    targetElement.getBoundingClientRect().top - surfaceTopPx,
+            });
         }
 
         publishCurrentId(
@@ -593,25 +583,28 @@ function useTocTracker(trackerProps: {
     }, [actionsRef, scheduleMeasurement]);
 
     useIsoLayoutEffect(() => {
-        // Immediate transitions: an inactive surface or a departed current ID publishes null without a measurement.
-        if (scrollElement === null) publishCurrentId(null);
-        else if (
-            currentIdRef.current !== null &&
-            !targetIds.includes(currentIdRef.current)
-        )
-            publishCurrentId(null);
-
+        // The committed props are the measurement input, so they update before any scheduled work.
         committedPropsRef.current = {
             targetIds,
             scrollElement,
             activationOffset,
         };
 
-        if (scrollElement === null) return;
+        // Immediate transitions: an inactive surface or a departed current ID publishes null without a measurement.
+        if (scrollElement === null) {
+            publishCurrentId(null);
+            return;
+        }
+        if (
+            currentIdRef.current !== null &&
+            !targetIds.includes(currentIdRef.current)
+        )
+            publishCurrentId(null);
+
         scheduleMeasurement();
 
         const navElement = navElementRef.current;
-        // Unreachable: refs attach before layout effects, and the nav element always renders.
+        // A custom renderer that drops the ref cannot provide the tracking element.
         if (navElement === null) return;
         const doc = navElement.ownerDocument;
 
@@ -734,12 +727,10 @@ export function TocRoot(componentProps: TocRootProps) {
         () => parseTrackingSource({ targetIds, headings }),
         [targetIds, headings],
     );
-    const parsedActivationOffset = parseActivationOffset(activationOffset);
-
     const tracker = useTocTracker({
         targetIds: trackedSource.targetIds,
         scrollElement,
-        activationOffset: parsedActivationOffset,
+        activationOffset: parseActivationOffset(activationOffset),
         onCurrentChange,
         actionsRef,
     });
@@ -758,7 +749,7 @@ export function TocRoot(componentProps: TocRootProps) {
 
     const state: TocRootState = { currentId: tracker.currentId };
 
-    const renderedElement = useRenderElement<TocRootState, HTMLElement, "nav">(
+    const element = useRenderElement<TocRootState, HTMLElement, "nav">(
         "nav",
         componentProps,
         {
@@ -766,11 +757,11 @@ export function TocRoot(componentProps: TocRootProps) {
             ref: [ref, tracker.navElementRef],
             stateAttributesMapping: TOC_ROOT_STATE_ATTRIBUTES_MAPPING,
             props: [
+                // Keep the default first so consumer-provided labels override it.
                 DEFAULT_ROOT_LABEL_PROPS,
                 elementProps,
                 (props) => ({
                     ...props,
-                    "data-slot": TOC_ROOT_SLOT,
                     "data-has-current":
                         state.currentId !== null ? "" : undefined,
                 }),
@@ -780,12 +771,11 @@ export function TocRoot(componentProps: TocRootProps) {
 
     return (
         <TocRootContext.Provider value={contextValue}>
-            {renderedElement}
+            {element}
         </TocRootContext.Provider>
     );
 }
 
-/** Structural part; function children map the Root-owned outline. */
 export interface TocListProps extends TocCompositionProps<
     "ol",
     TocListState,
@@ -811,35 +801,35 @@ export function TocList(componentProps: TocListProps) {
         ...elementProps
     } = componentProps;
 
-    // A function child maps the Root-owned outline, so the `targetIds` lane, which owns none, is a configuration error.
-    let children = childrenProp;
-    if (typeof children === "function") {
-        // The callback must not read the reassigned `children` binding.
-        const renderEntry = children;
-        const outline = rootContext === undefined ? null : rootContext.outline;
-        if (outline === null)
-            throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
-        children = flattenOutline(outline).map((entry) => (
-            <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
-        ));
-    }
+    const outline = rootContext === undefined ? null : rootContext.outline;
+    const children =
+        typeof childrenProp === "function"
+            ? renderOutlineEntries(childrenProp, outline)
+            : childrenProp;
 
     return useRenderElement<TocListState, HTMLOListElement, "ol">(
         "ol",
         componentProps,
         {
-            state: EMPTY_TOC_STATE,
+            state: EMPTY_PART_STATE,
             ref,
-            props: [
-                elementProps,
-                (props) => ({ ...props, "data-slot": TOC_LIST_SLOT, children }),
-            ],
+            props: [elementProps, (props) => ({ ...props, children })],
         },
     );
 }
 
-// Flattens in pre-order: a group precedes its children, and a subtree
-// finishes before the next sibling; heading levels cap the recursion at six.
+function renderOutlineEntries(
+    renderEntry: (entry: Heading) => React.ReactNode,
+    outline: readonly HeadingGroup[] | null,
+): React.ReactNode {
+    if (outline === null)
+        throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
+
+    return flattenOutline(outline).map((entry) => (
+        <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
+    ));
+}
+
 function flattenOutline(
     outline: readonly HeadingGroup[],
     flatEntries: Heading[] = [],
@@ -865,12 +855,9 @@ export function TocItem(componentProps: TocItemProps) {
         "li",
         componentProps,
         {
-            state: EMPTY_TOC_STATE,
+            state: EMPTY_PART_STATE,
             ref,
-            props: [
-                elementProps,
-                (props) => ({ ...props, "data-slot": TOC_ITEM_SLOT }),
-            ],
+            props: [elementProps],
         },
     );
 }
@@ -908,7 +895,6 @@ export function TocLink(componentProps: TocLinkProps) {
                 elementProps,
                 (props) => ({
                     ...props,
-                    "data-slot": TOC_LINK_SLOT,
                     href: `#${encodeURIComponent(targetId)}`,
                     "aria-current": state.current
                         ? ARIA_CURRENT_LOCATION

@@ -198,7 +198,6 @@ type TocRootState = {
 
 | Attribute | Description |
 | :--- | :--- |
-| `data-slot="toc-root"` | Always present. |
 | `data-has-current` | Present when `currentId` is not `null`. |
 
 Behavior:
@@ -216,7 +215,6 @@ Structural composition parts. They render your children as-is:
 | :--- | :--- | :--- |
 | Default element | `<ol>` | `<li>` |
 | State | `{}` | `{}` |
-| Attributes | `data-slot="toc-list"` | `data-slot="toc-item"` |
 
 The mapping lane renders one flat `<ol>` in document order; the tracked collection stays flat at any presentation depth. Semantic nesting is your composition: pass `buildOutline` output and author the `<TocList>`/`TocItem` structure yourself when you want nested lists. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
 
@@ -241,7 +239,6 @@ type TocLinkState = {
 
 | Attribute | Description |
 | :--- | :--- |
-| `data-slot="toc-link"` | Always present. |
 | `data-current` | Present when the link's target is current. |
 
 Notes:
