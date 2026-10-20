@@ -335,16 +335,6 @@ Reaching a moved position still needs a scroll; otherwise the content owner call
 
 A `TocLink`'s membership and the collection's validity throw synchronously at render. An element-mode target that resolves outside its configured scroller throws during the measurement effect, because targets in element mode must be DOM descendants of the scroller. The error surfaces as an uncaught exception from the scheduled measurement callback, and React error boundaries do not catch it. The error repeats on every scheduled event while the configuration stays broken.
 
-### Immediate `null` transitions
-
-These configuration changes publish `null` at once, with no wait for a measurement:
-
-- the current target is removed from the tracking collection, including by an emptied lane;
-- `scrollElement` becomes `null`, so tracking is inactive;
-- an element scroller with no usable layout box arrives or loses its box.
-
-Other changes lag by design: after a commit, the next scheduled measurement decides the new current target, and you can observe the previous value until then. Unmounting emits nothing and cancels pending work; cleanup never fabricates a `null` transition.
-
 ## Server rendering and StrictMode
 
 - The server render, the first client render, and an empty collection produce the same markup: `currentId` is `null`, with no loading placeholders and no automatic hiding of empty outlines. You can render the full nav, lists, items, and links on the server, because a link's `href` is a pure function of its `targetId` — and the `headings` lane's function children map from prop data the server also holds.
@@ -364,8 +354,6 @@ The component targets modern evergreen browsers, with no polyfills beyond what s
 
 ### Explicit non-goals
 
-Each omission below is deliberate; compose the behavior outside the core:
-
 - Reading-progress percentages, scroll percentages, and per-target visibility sets.
 - Drag-to-navigate, slider or listbox semantics, and hover-to-navigate.
 - Heading ID generation, slugging, and document mutation.
@@ -374,7 +362,6 @@ Each omission below is deliberate; compose the behavior outside the core:
 - Shadow roots, cross-document targets, nested or coordinated scrollers, and automatic scrollable-ancestor detection.
 - Horizontal scrolling, vertical writing modes, visual-viewport and pinch-zoom geometry, and rotated or scaled scrolling surfaces.
 - Label, Indicator, Preview, or Content parts, and built-in animation of any kind.
-- Automated browser-testing infrastructure.
 - Validation that a fragment name is unique across the whole document.
 
 ### Consumer responsibilities
@@ -385,51 +372,6 @@ Each omission below is deliberate; compose the behavior outside the core:
 - Coordinate `activationOffset` with CSS scroll offsets where a landing position must correspond to a crossing.
 - Honor the authoring constraints above (one current link per landmark set; the fragment-alias and `<base>` preconditions).
 - Verify assistive-technology behavior manually.
-
-## Verification
-
-There is no automated browser suite. The `bun:test` units cover pure logic with synthetic inputs; scrolling, navigation, focus, and assistive behavior are verified manually. No bundle-size figures appear in this README until a measurement path exists.
-
-Run this checklist in current Chrome, Firefox, and Safari, in viewport and element-scroller modes. A completed pass records its results here:
-
-1. `currentId` starts `null`; the first crossing notifies; scrolling up past headings re-selects the last crossed.
-2. The activation line lands where expected for offsets `0`, a fixed-header-style offset, and an offset larger than the viewport height (the current target can sit below the fold — intended).
-3. Bottom exception: a short final section becomes current at the bottom; a short page with no overflow reports `null` throughout.
-4. Element scroller: its scroll drives tracking; document scrolling under it does not; `scrollElement={null}` deactivates; unmounting and reattaching through callback-ref state resumes correctly.
-5. Targets inside an overflow panel in viewport mode are tracked; native anchor navigation to them scrolls inner and outer ancestors per browser rules.
-6. Late-mounted and replaced same-ID targets become current at the next event; `refresh()` picks up image and font reflow while stationary.
-7. Missing target: the anchor renders and navigates natively; the tracker skips it; no crash.
-8. `targetIds` replaced: a removed current target reports `null` immediately; the new current appears at the next scroll or `refresh()`.
-9. Links: `href` and `aria-current` are correct; a modified click opens a new tab; middle click behaves; back and forward accumulate entries and restore per browser rules; a direct load with `#fragment` lands correctly with consumer `scroll-padding`.
-10. Keyboard: tab order follows the links; Enter navigates; after native navigation, the next tab stop continues near the destination.
-11. Hydration: server HTML and first client render match; StrictMode double-invoke causes no extra notifications beyond the documented re-emission.
-12. `discoverHeadings` ignores the scope element itself, excludes `aria-hidden`/`hidden` title content and script/style, trims whitespace, throws on missing or duplicate IDs and empty titles, and includes CSS-hidden headings.
-13. `buildOutline` nests per the grouping rule, including skipped levels, a deep first heading, and a later shallower heading; `children` is always an array; the input is not mutated.
-14. Composition: `render` on every part swaps elements while state props and refs reach the DOM node; the `className`/`style` state functions receive the documented state.
-15. An empty collection renders an empty landmark with `currentId = null`; consumer empty-state styling applies.
-16. RTL article text: tracking and navigation behave identically (vertical geometry is unaffected).
-
-## Playground
-
-`playground/vite-app` is a small Vite app with four worked use cases of the parts. The dev server runs from the repository root:
-
-```bash
-bun install
-bun run playground:dev
-```
-
-| Variant                | Demonstrates                                                                                                                                         | Checklist rows above |
-| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------- |
-| Document scroll        | the `useTocOutline` snapshot into the `headings` lane, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header       | 1, 2, 9, 12          |
-| Embedded scroll area   | static `headings` data tracked in an element scrollport wired through callback-ref state                                                             | 4, 13                |
-| Custom render + events | `onCurrentChange`, `activationOffset` from a range input, a `TocLink` `render` prop, and `actionsRef` `refresh()` after a banner toggle              | 2, 6, 14             |
-| Dynamic targets        | manual discovery into the `headings` lane after add and remove commits (the content mutates), and `display: none` targets that discovery still finds | 7, 8, 15             |
-
-Vite dev is a manual-verification venue for the checklist above: each variant exercises its listed rows in the shipped modes. The playground imports [src/table-of-contents.tsx](./src/table-of-contents.tsx) directly, and the library itself is not rebuilt for the playground; `vite build` compiles the same source the unit tests run against.
-
-## Also exported
-
-The module exports the four element parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`) and the text part (`TocValue`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `selectActiveValue`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
 
 ## Contributing
 
