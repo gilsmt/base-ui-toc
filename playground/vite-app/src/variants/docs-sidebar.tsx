@@ -4,6 +4,7 @@ import {
   TocList,
   TocItem,
   TocLink,
+  TocValue,
   useTocOutline,
   type Heading,
 } from "../../../../src/table-of-contents";
@@ -24,6 +25,11 @@ export function DocsSidebar() {
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
         <TocRoot headings={headings} className="pg-docs-nav">
+          {/* The text part renders the active item's value and no element. */}
+          <p className="pg-docs-current">
+            Reading:{" "}
+            <TocValue>{(value) => value ?? "nothing yet"}</TocValue>
+          </p>
           {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (

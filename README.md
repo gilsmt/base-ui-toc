@@ -35,7 +35,7 @@ Import the parts, and assemble them together:
 
 ```tsx
 import {
-  TocRoot, TocList, TocItem, TocLink,
+  TocRoot, TocList, TocItem, TocLink, TocValue,
   useTocOutline, discoverHeadings, buildOutline,
 } from "@/components/table-of-contents";
 
@@ -109,6 +109,7 @@ Default rendering:
 | `TocList` | `<ol>` | — |
 | `TocItem` | `<li>` | — |
 | `TocLink` | `<a>` | `aria-current="location"` when current |
+| `TocValue` | none | the active item's value as text |
 
 ## Outline utilities
 
@@ -247,6 +248,36 @@ Notes:
 - Rendering any subset of the collection is fine, and several links may share one configured target.
 - Within one rendered navigation landmark, render at most one link per target, so one set never carries two `aria-current="location"` elements. Separate `TocRoot` instances may each link the same document targets.
 
+### `TocValue`
+
+The active item's value, rendered as text. It renders no element of its own, the way Base UI's `Combobox.Value` does. Use it for a "you are reading" readout, a breadcrumb, or any widget that needs the current location's label.
+
+```tsx
+<TocRoot headings={headings}>
+  <p>
+    Currently reading: <TocValue />
+  </p>
+</TocRoot>
+```
+
+The value is the current heading's title in the `headings` lane, and the current target ID in the `targetIds` lane, where no titles exist. While no target is current there is no value, and the part renders nothing.
+
+| Prop | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `children` | `(value: string \| null) => React.ReactNode` | — | Renders the value. A function receives it, so you can format it or label the empty state. |
+
+```tsx
+<TocRoot headings={headings}>
+  <p>
+    Currently reading: <TocValue>{(value) => value ?? "nothing yet"}</TocValue>
+  </p>
+</TocRoot>
+```
+
+Notes:
+
+- A `TocValue` must render inside a `TocRoot`; outside, it throws.
+
 ### Shared composition interface
 
 Every part exposes the same Base UI composition surface (see the [customization handbook](https://base-ui.com/react/handbook/composition)):
@@ -256,6 +287,8 @@ Every part exposes the same Base UI composition surface (see the [customization 
 - `render`: `ReactElement | ((props, state) => ReactElement)`
 - `ref` forwards to the rendered element, never to an actions object.
 - All native props of the default element are accepted and merged, with your handlers running first.
+
+`TocValue` is the exception: it renders no element, so it exposes no composition surface.
 
 The state functions receive the part's state, so styling can follow the tracked location:
 
@@ -399,7 +432,7 @@ Vite dev is a manual-verification venue for the checklist above: each variant ex
 
 ## Also exported
 
-The module exports the four parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
+The module exports the four element parts (`TocRoot`, `TocList`, `TocItem`, `TocLink`) and the text part (`TocValue`), the two outline utilities (`discoverHeadings`, `buildOutline`), and the consumer hook `useTocOutline` (see Outline utilities). It also exports pure helpers (`isValidTargetId`, `parseTargetCollection`, `isValidActivationOffset`, `parseTrackingSource`, `selectCurrentTargetId`, `selectActiveValue`, `cleanHeadingTitle`) solely for the unit tests in [test/table-of-contents.test.tsx](./test/table-of-contents.test.tsx); they are not part of the public contract — build on the parts, the utilities, and the hook.
 
 ## Contributing
 

@@ -38,6 +38,13 @@
   font-weight: 600;
 }
 
+/* The value part renders text only, so the readout owns its own element. */
+.pg-docs-current {
+  margin: 0 0 0.5rem;
+  color: var(--pg-text-muted);
+  font-size: 0.8125rem;
+}
+
 .pg-docs-article {
   background: var(--pg-surface);
   border: 1px solid var(--pg-border);

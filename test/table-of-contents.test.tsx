@@ -8,6 +8,7 @@ import {
   isValidTargetId,
   parseTargetCollection,
   parseTrackingSource,
+  selectActiveValue,
   selectCurrentTargetId,
   useTocOutline,
   type TocGeometrySample,
@@ -18,6 +19,7 @@ import {
   TocLink,
   TocList,
   TocRoot,
+  TocValue,
 } from "../src/table-of-contents";
 
 describe("isValidTargetId", () => {
@@ -651,5 +653,63 @@ describe("useTocOutline SSR", () => {
     };
 
     expect(renderToStaticMarkup(React.createElement(probe))).toContain(">0:0<");
+  });
+});
+
+describe("selectActiveValue", () => {
+  const outline = buildOutline([
+    heading("intro", 2, "Intro"),
+    heading("setup", 3, "Setup"),
+  ]);
+
+  test("returns the current heading's title from a nested outline", () => {
+    expect(selectActiveValue(outline, "setup")).toBe("Setup");
+  });
+
+  test("returns the target ID in the targetIds lane, where no titles exist", () => {
+    expect(selectActiveValue(null, "intro")).toBe("intro");
+  });
+
+  test("returns the target ID when the current ID is not in the outline", () => {
+    expect(selectActiveValue(outline, "other")).toBe("other");
+  });
+
+  test("returns null while no target is current", () => {
+    expect(selectActiveValue(outline, null)).toBe(null);
+    expect(selectActiveValue(null, null)).toBe(null);
+  });
+});
+
+describe("TocValue", () => {
+  test("throws outside a TocRoot", () => {
+    expect(() => renderToStaticMarkup(React.createElement(TocValue, null))).toThrow();
+  });
+
+  test("renders no element of its own", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: [heading("intro", 2, "Intro")] },
+        React.createElement(TocValue, null),
+      ),
+    );
+
+    expect(markup.startsWith("<nav")).toBe(true);
+    expect(markup).not.toContain("<span");
+    expect(markup).not.toContain("Intro");
+  });
+
+  test("passes the value to a children function", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(
+        TocRoot,
+        { headings: [heading("intro", 2, "Intro")] },
+        React.createElement(TocValue, {
+          children: (value: string | null) => `value:${value ?? "none"}`,
+        }),
+      ),
+    );
+
+    expect(markup).toContain("value:none");
   });
 });

@@ -64,6 +64,8 @@ const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
 const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX =
     "targetId is not in the root collection: ";
 
+const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
+
 const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
     "TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.";
 
@@ -845,6 +847,31 @@ function flattenOutline(
     return flatEntries;
 }
 
+/**
+ * The active item's value: the current heading's title in the `headings` lane,
+ * and the current target ID in the `targetIds` lane, where no titles exist.
+ */
+export function selectActiveValue(
+    outline: readonly HeadingGroup[] | null,
+    currentId: string | null,
+): string | null {
+    if (currentId === null) return null;
+    if (outline === null) return currentId;
+    return findHeadingTitle(outline, currentId) ?? currentId;
+}
+
+function findHeadingTitle(
+    outline: readonly HeadingGroup[],
+    targetId: string,
+): string | null {
+    for (const group of outline) {
+        if (group.id === targetId) return group.title;
+        const childTitle = findHeadingTitle(group.children, targetId);
+        if (childTitle !== null) return childTitle;
+    }
+    return null;
+}
+
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
 /** An entry of the flat outline; nested lists are consumer-authored from `buildOutline` when wanted. */
@@ -903,4 +930,24 @@ export function TocLink(componentProps: TocLinkProps) {
             ],
         },
     );
+}
+
+export interface TocValueProps {
+    /**
+     * Renders the value. A function receives it, so the consumer can format it
+     * or label the empty state.
+     */
+    children?: ((value: string | null) => React.ReactNode) | undefined;
+}
+
+/**
+ * The active item's value as text: the current heading's title, or the current
+ * target ID in the `targetIds` lane. Renders no element.
+ */
+export function TocValue({ children }: TocValueProps) {
+    const rootContext = React.useContext(TocRootContext);
+    if (rootContext === undefined) throw new Error(VALUE_OUTSIDE_ROOT_MESSAGE);
+
+    const value = selectActiveValue(rootContext.outline, rootContext.currentId);
+    return typeof children === "function" ? children(value) : value;
 }
