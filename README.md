@@ -2,13 +2,6 @@
 
 An unstyled, copy-and-paste Table of Contents for in-page navigation in React 19 projects. It tracks one current location in the content while the reader scrolls, and it renders native fragment links that move the reader to sections. Made to be used alongside [Base UI](https://base-ui.com).
 
-One call stack serves two presentations:
-
-- a classic text outline (links in one flat list, indented by heading level; nested lists are an optional manual composition)
-- a compact scrubber-style rail (small ticks with accessible names)
-
-The difference is presentation only. There is no second interaction model: every entry is a link, hovering or focusing an entry inspects it, and activating it navigates. Floating panels, previews, tick magnification, progress meters, and disclosure state are consumer-composed UI. The component forwards events and refs, and it owns no inspection state. Inspecting an entry never changes the document's current location, and navigation never changes inspection.
-
 ## Use
 
 ### 1. Install dependencies
@@ -27,7 +20,7 @@ bun add @base-ui/react @base-ui/utils
 
 ### 2. Copy the file into your project
 
-[src/table-of-contents.tsx](./src/table-of-contents.tsx) is the entire product in one file. Copy it into your repository, read it, and change it to match your team's standards and goals. Adjust the import path in the examples below to the file's new location.
+[src/table-of-contents.tsx](./src/table-of-contents.tsx). Copy it into your repository, read it, and change it to match your team's standards and goals.
 
 ## Anatomy
 
@@ -35,8 +28,14 @@ Import the parts, and assemble them together:
 
 ```tsx
 import {
-  TocRoot, TocList, TocItem, TocLink, TocValue,
-  useTocOutline, discoverHeadings, buildOutline,
+    TocRoot,
+    TocList,
+    TocItem,
+    TocLink,
+    TocValue,
+    useTocOutline,
+    discoverHeadings,
+    buildOutline,
 } from "@/components/table-of-contents";
 
 // Discovery runs after commit, before paint — never during rendering:
@@ -48,15 +47,15 @@ const { headings } = useTocOutline(article);
 // One flat map in document order: the library authors keys from the entry
 // ids, and the consumer indents by heading level.
 return (
-  <TocRoot headings={headings}>
-    <TocList>
-      {(entry) => (
-        <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
-          <TocLink targetId={entry.id}>{entry.title}</TocLink>
-        </TocItem>
-      )}
-    </TocList>
-  </TocRoot>
+    <TocRoot headings={headings}>
+        <TocList>
+            {(entry) => (
+                <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
+                    <TocLink targetId={entry.id}>{entry.title}</TocLink>
+                </TocItem>
+            )}
+        </TocList>
+    </TocRoot>
 );
 ```
 
@@ -64,18 +63,23 @@ The custom lane stays open: the same inline map is the composition, so a custom 
 
 ```tsx
 <TocRoot headings={headings}>
-  <TocList>
-    {(entry) => (
-      <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
-        <TocLink
-          targetId={entry.id}
-          render={(props, state) => <a {...props} className={state.current ? "current" : undefined} />}
-        >
-          {entry.title}
-        </TocLink>
-      </TocItem>
-    )}
-  </TocList>
+    <TocList>
+        {(entry) => (
+            <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
+                <TocLink
+                    targetId={entry.id}
+                    render={(props, state) => (
+                        <a
+                            {...props}
+                            className={state.current ? "current" : undefined}
+                        />
+                    )}
+                >
+                    {entry.title}
+                </TocLink>
+            </TocItem>
+        )}
+    </TocList>
 </TocRoot>
 ```
 
@@ -86,30 +90,28 @@ const headings = article == null ? [] : discoverHeadings(article);
 const outline = buildOutline(headings);
 
 <TocRoot targetIds={headings.map((heading) => heading.id)}>
-  <TocList>
-    {outline.map((group) => (
-      <TocItem key={group.id}>
-        <TocLink targetId={group.id}>{group.title}</TocLink>
-        {group.children.length > 0 && (
-          <TocList>
-            {/* deeper levels, same shape */}
-          </TocList>
-        )}
-      </TocItem>
-    ))}
-  </TocList>
-</TocRoot>
+    <TocList>
+        {outline.map((group) => (
+            <TocItem key={group.id}>
+                <TocLink targetId={group.id}>{group.title}</TocLink>
+                {group.children.length > 0 && (
+                    <TocList>{/* deeper levels, same shape */}</TocList>
+                )}
+            </TocItem>
+        ))}
+    </TocList>
+</TocRoot>;
 ```
 
 Default rendering:
 
-| Part | Element | Default semantics |
-| :--- | :--- | :--- |
-| `TocRoot` | `<nav>` | `aria-label="Table of contents"` (override with `aria-label` or `aria-labelledby`) |
-| `TocList` | `<ol>` | — |
-| `TocItem` | `<li>` | — |
-| `TocLink` | `<a>` | `aria-current="location"` when current |
-| `TocValue` | none | the active item's value as text |
+| Part       | Element | Default semantics                                                                  |
+| :--------- | :------ | :--------------------------------------------------------------------------------- |
+| `TocRoot`  | `<nav>` | `aria-label="Table of contents"` (override with `aria-label` or `aria-labelledby`) |
+| `TocList`  | `<ol>`  | —                                                                                  |
+| `TocItem`  | `<li>`  | —                                                                                  |
+| `TocLink`  | `<a>`   | `aria-current="location"` when current                                             |
+| `TocValue` | none    | the active item's value as text                                                    |
 
 ## Outline utilities
 
@@ -140,8 +142,8 @@ Discovery is a snapshot with no layout reads: content changes require another ca
 
 ```tsx
 buildOutline([
-  { id: "intro", title: "Intro", level: 2 },
-  { id: "detail", title: "Detail", level: 4 },
+    { id: "intro", title: "Intro", level: 2 },
+    { id: "detail", title: "Detail", level: 4 },
 ]);
 // [
 //   {
@@ -178,27 +180,27 @@ The component does not check that an ID is unique across the document. A target 
 
 The tracked navigation landmark. Renders a `<nav>` element.
 
-| Prop | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `targetIds` | `readonly string[]` | — | Ordered destination IDs — the `targetIds` lane. This collection alone is the source of truth for membership and order: mounted links never add, remove, reorder, or hide a target. Treat it as an immutable snapshot; replace the array to reconfigure. An empty collection is valid: trackers run, `currentId` is `null`, and the empty landmark is your decision. Mutually exclusive with `headings`: pass exactly one lane, or the render throws. |
-| `headings` | `readonly Heading[]` | — | Flat heading entries — the `headings` lane. `TocRoot` derives the tracked collection from the entry ids (same identity semantics as `targetIds`) and builds the outline through `buildOutline`; a `TocList` function child then maps it (see `TocList`). Immutable snapshot; replace the array to reconfigure. Mutually exclusive with `targetIds`. |
-| `scrollElement` | `Element \| null` | `undefined` | The tracked scrolling surface. Omit to track the document viewport. Passing the tracking document's root element is equivalent to omitting it: the root element is the viewport. Pass an element to track that scrollport. `null` deactivates tracking: `currentId` is `null`; this is not a fallback to the viewport. One `TocRoot` tracks one surface. |
-| `activationOffset` | `number` | `0` | CSS pixels below the surface top edge that count as "reached". Must be finite and non-negative. Tracking-only: coordinate with CSS `scroll-padding` and `scroll-margin` for navigation landings. |
-| `onCurrentChange` | `(currentId: string \| null) => void` | — | Change-only notification of the current target ID. Runs after commit, never during render. Replacing the callback identity does not re-notify the current value. |
-| `actionsRef` | `React.RefObject<TocActions \| null>` | — | Receives `{ refresh(): void }`. Distinct from `ref` by design. |
-| `ref` | `React.Ref<HTMLElement>` | — | The rendered `<nav>` element. |
-| `className`, `style`, `render` | — | — | Shared composition interface (see below). |
-| native props | — | — | All native `<nav>` props are accepted and merged; your handlers run first. Pass `aria-label` or `aria-labelledby` to override the default label. |
+| Prop                           | Type                                  | Default     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| :----------------------------- | :------------------------------------ | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `targetIds`                    | `readonly string[]`                   | —           | Ordered destination IDs — the `targetIds` lane. This collection alone is the source of truth for membership and order: mounted links never add, remove, reorder, or hide a target. Treat it as an immutable snapshot; replace the array to reconfigure. An empty collection is valid: trackers run, `currentId` is `null`, and the empty landmark is your decision. Mutually exclusive with `headings`: pass exactly one lane, or the render throws. |
+| `headings`                     | `readonly Heading[]`                  | —           | Flat heading entries — the `headings` lane. `TocRoot` derives the tracked collection from the entry ids (same identity semantics as `targetIds`) and builds the outline through `buildOutline`; a `TocList` function child then maps it (see `TocList`). Immutable snapshot; replace the array to reconfigure. Mutually exclusive with `targetIds`.                                                                                                  |
+| `scrollElement`                | `Element \| null`                     | `undefined` | The tracked scrolling surface. Omit to track the document viewport. Passing the tracking document's root element is equivalent to omitting it: the root element is the viewport. Pass an element to track that scrollport. `null` deactivates tracking: `currentId` is `null`; this is not a fallback to the viewport. One `TocRoot` tracks one surface.                                                                                             |
+| `activationOffset`             | `number`                              | `0`         | CSS pixels below the surface top edge that count as "reached". Must be finite and non-negative. Tracking-only: coordinate with CSS `scroll-padding` and `scroll-margin` for navigation landings.                                                                                                                                                                                                                                                     |
+| `onCurrentChange`              | `(currentId: string \| null) => void` | —           | Change-only notification of the current target ID. Runs after commit, never during render. Replacing the callback identity does not re-notify the current value.                                                                                                                                                                                                                                                                                     |
+| `actionsRef`                   | `React.RefObject<TocActions \| null>` | —           | Receives `{ refresh(): void }`. Distinct from `ref` by design.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `ref`                          | `React.Ref<HTMLElement>`              | —           | The rendered `<nav>` element.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `className`, `style`, `render` | —                                     | —           | Shared composition interface (see below).                                                                                                                                                                                                                                                                                                                                                                                                            |
+| native props                   | —                                     | —           | All native `<nav>` props are accepted and merged; your handlers run first. Pass `aria-label` or `aria-labelledby` to override the default label.                                                                                                                                                                                                                                                                                                     |
 
 ```ts
 type TocRootState = {
-  /** The ID of the current target, or null before the first crossing. */
-  currentId: string | null;
-}
+    /** The ID of the current target, or null before the first crossing. */
+    currentId: string | null;
+};
 ```
 
-| Attribute | Description |
-| :--- | :--- |
+| Attribute          | Description                             |
+| :----------------- | :-------------------------------------- |
 | `data-has-current` | Present when `currentId` is not `null`. |
 
 Behavior:
@@ -212,10 +214,10 @@ Behavior:
 
 Structural composition parts. They render your children as-is:
 
-| | `TocList` | `TocItem` |
-| :--- | :--- | :--- |
-| Default element | `<ol>` | `<li>` |
-| State | `{}` | `{}` |
+|                 | `TocList` | `TocItem` |
+| :-------------- | :-------- | :-------- |
+| Default element | `<ol>`    | `<li>`    |
+| State           | `{}`      | `{}`      |
 
 The mapping lane renders one flat `<ol>` in document order; the tracked collection stays flat at any presentation depth. Semantic nesting is your composition: pass `buildOutline` output and author the `<TocList>`/`TocItem` structure yourself when you want nested lists. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
 
@@ -225,21 +227,21 @@ The mapping lane renders one flat `<ol>` in document order; the tracked collecti
 
 A native fragment link to one configured target. Renders an `<a>` element.
 
-| Prop | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `targetId` | `string` | — | The canonical target ID. It must be a valid ID, and it must be a member of the root collection; both violations throw at render. |
-| `href`, `aria-current` | — | component-owned | `href` derives as `"#" + encodeURIComponent(targetId)`, and `aria-current="location"` appears exactly when the link is current. Component-owned values win over conflicting consumer values at runtime. |
-| `ref`, `className`, `style`, `render`, other native anchor props | — | — | Shared composition interface (see below). Your `onClick` handlers merge and run before internals; preventing the native navigation yourself is allowed and respected. |
+| Prop                                                             | Type     | Default         | Description                                                                                                                                                                                             |
+| :--------------------------------------------------------------- | :------- | :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `targetId`                                                       | `string` | —               | The canonical target ID. It must be a valid ID, and it must be a member of the root collection; both violations throw at render.                                                                        |
+| `href`, `aria-current`                                           | —        | component-owned | `href` derives as `"#" + encodeURIComponent(targetId)`, and `aria-current="location"` appears exactly when the link is current. Component-owned values win over conflicting consumer values at runtime. |
+| `ref`, `className`, `style`, `render`, other native anchor props | —        | —               | Shared composition interface (see below). Your `onClick` handlers merge and run before internals; preventing the native navigation yourself is allowed and respected.                                   |
 
 ```ts
 type TocLinkState = {
-  /** Whether this link's target is the current location. */
-  current: boolean;
-}
+    /** Whether this link's target is the current location. */
+    current: boolean;
+};
 ```
 
-| Attribute | Description |
-| :--- | :--- |
+| Attribute      | Description                                |
+| :------------- | :----------------------------------------- |
 | `data-current` | Present when the link's target is current. |
 
 Notes:
@@ -254,23 +256,24 @@ The active item's value, rendered as text. It renders no element of its own, the
 
 ```tsx
 <TocRoot headings={headings}>
-  <p>
-    Currently reading: <TocValue />
-  </p>
+    <p>
+        Currently reading: <TocValue />
+    </p>
 </TocRoot>
 ```
 
 The value is the current heading's title in the `headings` lane, and the current target ID in the `targetIds` lane, where no titles exist. While no target is current there is no value, and the part renders nothing.
 
-| Prop | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `children` | `(value: string \| null) => React.ReactNode` | — | Renders the value. A function receives it, so you can format it or label the empty state. |
+| Prop       | Type                                         | Default | Description                                                                               |
+| :--------- | :------------------------------------------- | :------ | :---------------------------------------------------------------------------------------- |
+| `children` | `(value: string \| null) => React.ReactNode` | —       | Renders the value. A function receives it, so you can format it or label the empty state. |
 
 ```tsx
 <TocRoot headings={headings}>
-  <p>
-    Currently reading: <TocValue>{(value) => value ?? "nothing yet"}</TocValue>
-  </p>
+    <p>
+        Currently reading:{" "}
+        <TocValue>{(value) => value ?? "nothing yet"}</TocValue>
+    </p>
 </TocRoot>
 ```
 
@@ -421,12 +424,12 @@ bun install
 bun run playground:dev
 ```
 
-| Variant | Demonstrates | Checklist rows above |
-| :--- | :--- | :--- |
-| Document scroll | the `useTocOutline` snapshot into the `headings` lane, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header | 1, 2, 9, 12 |
-| Embedded scroll area | static `headings` data tracked in an element scrollport wired through callback-ref state | 4, 13 |
-| Custom render + events | `onCurrentChange`, `activationOffset` from a range input, a `TocLink` `render` prop, and `actionsRef` `refresh()` after a banner toggle | 2, 6, 14 |
-| Dynamic targets | manual discovery into the `headings` lane after add and remove commits (the content mutates), and `display: none` targets that discovery still finds | 7, 8, 15 |
+| Variant                | Demonstrates                                                                                                                                         | Checklist rows above |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------- |
+| Document scroll        | the `useTocOutline` snapshot into the `headings` lane, document-viewport tracking, and `scroll-margin-top` coordination with the sticky header       | 1, 2, 9, 12          |
+| Embedded scroll area   | static `headings` data tracked in an element scrollport wired through callback-ref state                                                             | 4, 13                |
+| Custom render + events | `onCurrentChange`, `activationOffset` from a range input, a `TocLink` `render` prop, and `actionsRef` `refresh()` after a banner toggle              | 2, 6, 14             |
+| Dynamic targets        | manual discovery into the `headings` lane after add and remove commits (the content mutates), and `display: none` targets that discovery still finds | 7, 8, 15             |
 
 Vite dev is a manual-verification venue for the checklist above: each variant exercises its listed rows in the shipped modes. The playground imports [src/table-of-contents.tsx](./src/table-of-contents.tsx) directly, and the library itself is not rebuilt for the playground; `vite build` compiles the same source the unit tests run against.
 
