@@ -38,14 +38,8 @@ import {
     buildOutline,
 } from "@/components/table-of-contents";
 
-// Discovery runs after commit, before paint — never during rendering:
-// renders rerun under StrictMode and concurrency and must depend only on
-// props and state, the scanned article does not exist during the nav's
-// render, and the server holds no document.
 const { headings } = useTocOutline(article);
 
-// One flat map in document order: the library authors keys from the entry
-// ids, and the consumer indents by heading level.
 return (
     <TocRoot headings={headings}>
         <TocList>
@@ -59,7 +53,7 @@ return (
 );
 ```
 
-The custom lane stays open: the same inline map is the composition, so a custom `TocLink` render lives inside it:
+Use the render prop to compose a part with your own React components.
 
 ```tsx
 <TocRoot headings={headings}>
