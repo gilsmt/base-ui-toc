@@ -1,2 +1,5 @@
 # Build output of this app only; the root gitignore covers node_modules.
 dist
+
+# The Vercel link and its prebuilt output.
+.vercel

@@ -59,7 +59,7 @@ export function RenderEvents() {
           activationOffset={activationOffsetPx}
           onCurrentChange={handleCurrentChange}
           actionsRef={actionsRef}
-          className="pg-rv-nav"
+          className="pg-toc pg-rv-nav"
         >
           {/* One flat map; the custom render spreads the merged props and marks the current location. */}
           <TocList>
@@ -68,8 +68,7 @@ export function RenderEvents() {
                 <TocLink
                   targetId={entry.id}
                   render={(props, state) => (
-                    <a {...props} className={state.current ? "pg-rv-link pg-rv-link-current" : "pg-rv-link"}>
-                      {state.current ? "▸ " : ""}
+                    <a {...props} className={state.current ? "pg-rv-link-current" : undefined}>
                       {props.children}
                     </a>
                   )}

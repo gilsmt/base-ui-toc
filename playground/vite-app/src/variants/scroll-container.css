@@ -2,7 +2,7 @@
 
 .pg-scroll {
   display: grid;
-  grid-template-columns: 14rem minmax(0, 1fr);
+  grid-template-columns: 16rem minmax(0, 1fr);
   gap: 2rem;
   align-items: start;
 }
@@ -10,25 +10,6 @@
 .pg-scroll-sidebar {
   position: sticky;
   top: var(--pg-header-height);
-}
-
-/* Current target highlight through the link's data attribute. */
-.pg-scroll-nav ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pg-scroll-nav a {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  color: inherit;
-  text-decoration: none;
-}
-
-.pg-scroll-nav a[data-current] {
-  color: var(--pg-accent);
 }
 
 .pg-scroll-view {

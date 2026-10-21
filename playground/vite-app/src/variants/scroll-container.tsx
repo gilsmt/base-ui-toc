@@ -41,7 +41,7 @@ export function ScrollContainer() {
   return (
     <div className="pg-scroll">
       <aside className="pg-scroll-sidebar">
-        <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-scroll-nav">
+        <TocRoot headings={HEADINGS} scrollElement={scrollElement} className="pg-toc pg-scroll-nav">
           {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (

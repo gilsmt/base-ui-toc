@@ -24,9 +24,9 @@ export function DocsSidebar() {
   return (
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
-        <TocRoot headings={headings} className="pg-docs-nav">
+        <TocRoot headings={headings} className="pg-toc pg-docs-nav">
           {/* The text part renders the active item's value and no element. */}
-          <p className="pg-docs-current">
+          <p className="pg-toc-current">
             Reading:{" "}
             <TocValue>{(value) => value ?? "nothing yet"}</TocValue>
           </p>

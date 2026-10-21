@@ -19,7 +19,16 @@ export function App() {
   return (
     <>
       <header className="pg-header">
-        <h1 className="pg-title">base-ui-toc playground</h1>
+        <h1 className="pg-title">
+          <a href="https://github.com/gilsmt/base-ui-toc">base-ui-toc</a>
+        </h1>
+        <span className="pg-tag">playground</span>
+        <a
+          className="pg-header-link"
+          href="https://github.com/gilsmt/base-ui-toc#readme"
+        >
+          Documentation
+        </a>
       </header>
       <div className="pg-body">
         <nav aria-label="Playground variants" className="pg-nav">

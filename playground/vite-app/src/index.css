@@ -1,12 +1,41 @@
+/*
+ * Tokens and app chrome. The palette and the type follow the sibling blog
+ * demo, so both read as one project. The parts stay unstyled: every rule
+ * here belongs to the playground, not to the library.
+ */
+
 :root {
-  --pg-header-height: 3.5rem;
-  --pg-accent: #0969da;
-  --pg-accent-background: #ddf4ff;
-  --pg-border: #d0d7de;
-  --pg-text-muted: #57606a;
+  --pg-font: "Hanken Grotesk", system-ui, sans-serif;
+  --pg-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --pg-page: #f9f9f9;
   --pg-surface: #ffffff;
-  --pg-page: #f6f8fa;
-  color-scheme: light;
+  --pg-surface-muted: #fcfcfc;
+  --pg-border: #00000014;
+  --pg-border-strong: #00000029;
+  --pg-text: #2e2e2e;
+  --pg-text-muted: #767676;
+  --pg-accent: #2660df;
+  --pg-accent-background: #f2fbff;
+
+  --pg-header-height: 3.5rem;
+  --pg-radius: 0.5rem;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pg-page: #131313;
+    --pg-surface: #1a1a1a;
+    --pg-surface-muted: #212121;
+    --pg-border: #ffffff3d;
+    --pg-border-strong: #ffffff5c;
+    --pg-text: #e6e6e6;
+    --pg-text-muted: #a3a3a3;
+    --pg-accent: #589ef9;
+    --pg-accent-background: #12192b;
+  }
 }
 
 *,
@@ -15,20 +44,38 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #1f2328;
+  font-family: var(--pg-font);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--pg-text);
   background: var(--pg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--pg-accent-background);
+}
+
+input[type="range"] {
+  accent-color: var(--pg-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
 }
 
 /* The sticky header is the reason headings carry scroll-margin-top below. */
@@ -38,6 +85,7 @@ body {
   z-index: 10;
   display: flex;
   align-items: center;
+  gap: 0.625rem;
   height: var(--pg-header-height);
   padding: 0 1.5rem;
   background: var(--pg-surface);
@@ -46,24 +94,60 @@ body {
 
 .pg-title {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pg-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.pg-title a:hover {
+  color: var(--pg-accent);
+}
+
+.pg-tag {
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--pg-text-muted);
+  background: var(--pg-page);
+  border: 1px solid var(--pg-border);
+  border-radius: 9999px;
+}
+
+.pg-header-link {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--pg-text-muted);
+  text-decoration: none;
+}
+
+.pg-header-link:hover {
+  color: var(--pg-accent);
 }
 
 /* One variant list beside one variant-owned main area. */
 .pg-body {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);
-  gap: 1.5rem;
-  max-width: 75rem;
+  gap: 2rem;
+  max-width: 78rem;
   margin: 0 auto;
-  padding: 1.25rem 1.5rem 4rem;
+  padding: 1.5rem 1.5rem 5rem;
+}
+
+/* The rail stays reachable while the variant scrolls. */
+.pg-nav {
+  position: sticky;
+  top: var(--pg-header-height);
 }
 
 .pg-nav-list {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.125rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -72,30 +156,36 @@ body {
 .pg-nav-button {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.125rem;
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.625rem;
   font: inherit;
   text-align: left;
   color: inherit;
-  background: var(--pg-surface);
-  border: 1px solid var(--pg-border);
-  border-radius: 0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--pg-radius);
   cursor: pointer;
 }
 
 .pg-nav-button:hover {
-  border-color: var(--pg-accent);
+  background: var(--pg-surface);
+  border-color: var(--pg-border);
 }
 
 .pg-nav-button[aria-current="true"] {
-  background: var(--pg-accent-background);
-  border-color: var(--pg-accent);
+  background: var(--pg-surface);
+  border-color: var(--pg-border-strong);
+  box-shadow: inset 2px 0 0 var(--pg-accent);
 }
 
 .pg-nav-label {
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.pg-nav-button[aria-current="true"] .pg-nav-label {
+  color: var(--pg-accent);
 }
 
 .pg-nav-description {
@@ -103,13 +193,65 @@ body {
   color: var(--pg-text-muted);
 }
 
+/*
+ * The shared table-of-contents treatment. The parts render unstyled
+ * structure, so the panel, the links and the current marker are styled
+ * here, once, for every variant.
+ */
+.pg-toc {
+  padding: 0.75rem;
+  background: var(--pg-surface);
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+}
+
+.pg-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-toc a {
+  display: block;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 0.375rem;
+  color: inherit;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.pg-toc a:hover {
+  background: var(--pg-surface-muted);
+}
+
+/* The current marker arrives through the data attribute the link renders. */
+.pg-toc a[data-current] {
+  color: var(--pg-accent);
+  font-weight: 700;
+  background: var(--pg-accent-background);
+}
+
+/* The value part renders text only, so the readout owns its own element. */
+.pg-toc-current {
+  margin: 0 0 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--pg-border);
+  color: var(--pg-text-muted);
+  font-size: 0.8125rem;
+}
+
 /* The variant owns the main area; the app adds no clipping or scroll rules. */
 .pg-main {
   min-width: 0;
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 60rem) {
   .pg-body {
     grid-template-columns: 1fr;
+  }
+
+  /* Stacked, the rail would fill the screen, so it scrolls with the page. */
+  .pg-nav {
+    position: static;
   }
 }

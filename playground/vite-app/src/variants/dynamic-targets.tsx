@@ -57,7 +57,7 @@ export function DynamicTargets() {
           <button type="button" onClick={handleRemoveLastSection}>Remove last</button>
           <button type="button" onClick={handleToggleHidden}>Toggle hidden</button>
         </div>
-        <TocRoot headings={headings} className="pg-dt-nav">
+        <TocRoot headings={headings} className="pg-toc pg-dt-nav">
           {/* One flat map in document order; the part authors the keys from the entry ids. */}
           <TocList>
             {(entry: Heading) => (
