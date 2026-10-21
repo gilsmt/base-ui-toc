@@ -69,7 +69,7 @@ export function DynamicTargets() {
         </TocRoot>
         <p className="pg-dt-note">
           The hidden section keeps its heading in the DOM, so it stays in the
-          outline and its link stays a plain anchor; the tracker reports it as
+          list and its link stays a plain anchor; the tracker reports it as
           unavailable. Removing the current target reports null right away, and
           the next scroll picks the new location.
         </p>

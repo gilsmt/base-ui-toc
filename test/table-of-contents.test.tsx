@@ -2,7 +2,7 @@ import * as React from "react";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  buildOutline,
+  groupHeadings,
   cleanHeadingTitle,
   isValidActivationOffset,
   isValidTargetId,
@@ -10,10 +10,12 @@ import {
   parseTrackingSource,
   selectActiveValue,
   selectCurrentTargetId,
-  useTocOutline,
+  useTocHeadings,
   type TocGeometrySample,
   type TocTargetGeometry,
   type Heading,
+  type HeadingNode,
+  type HeadingLevel,
   type TocLinkProps,
   TocItem,
   TocLink,
@@ -186,15 +188,15 @@ describe("cleanHeadingTitle", () => {
 
 const heading = (id: string, level: Heading["level"], title: string): Heading => ({ id, level, title });
 
-describe("buildOutline", () => {
+describe("groupHeadings", () => {
   test("grouping: nests deeper entries under the nearest preceding shallower entry", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("intro", 2, "Intro"),
       heading("setup", 3, "Setup"),
       heading("config", 3, "Config"),
     ]);
 
-    expect(outline).toEqual([
+    expect(tree).toEqual([
       { ...heading("intro", 2, "Intro"), children: [
         { ...heading("setup", 3, "Setup"), children: [] },
         { ...heading("config", 3, "Config"), children: [] },
@@ -203,14 +205,14 @@ describe("buildOutline", () => {
   });
 
   test("grouping: groups equal-level entries as siblings under the same parent", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("root", 1, "Root"),
       heading("part-a", 2, "A"),
       heading("part-b", 2, "B"),
       heading("detail", 3, "Detail under B"),
     ]);
 
-    expect(outline).toEqual([
+    expect(tree).toEqual([
       { ...heading("root", 1, "Root"), children: [
         { ...heading("part-a", 2, "A"), children: [] },
         { ...heading("part-b", 2, "B"), children: [{ ...heading("detail", 3, "Detail under B"), children: [] }] },
@@ -219,30 +221,30 @@ describe("buildOutline", () => {
   });
 
   test("grouping: nests across skipped levels without synthetic nodes", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("h2", 2, "Two"),
       heading("h4", 4, "Four"),
     ]);
 
-    expect(outline).toEqual([
+    expect(tree).toEqual([
       { ...heading("h2", 2, "Two"), children: [{ ...heading("h4", 4, "Four"), children: [] }] },
     ]);
   });
 
   test("grouping: roots a deep first heading as a top-level group", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("deep", 4, "Deep"),
       heading("shallow", 2, "Shallow"),
     ]);
 
-    expect(outline).toEqual([
+    expect(tree).toEqual([
       { ...heading("deep", 4, "Deep"), children: [] },
       { ...heading("shallow", 2, "Shallow"), children: [] },
     ]);
   });
 
   test("grouping: starts a new top-level group for a later shallower heading and never re-parents", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("a2", 2, "A"),
       heading("b3", 3, "B"),
       heading("c3", 3, "C"),
@@ -250,7 +252,7 @@ describe("buildOutline", () => {
       heading("e4", 4, "E"),
     ]);
 
-    expect(outline).toEqual([
+    expect(tree).toEqual([
       { ...heading("a2", 2, "A"), children: [
         { ...heading("b3", 3, "B"), children: [] },
         { ...heading("c3", 3, "C"), children: [] },
@@ -260,7 +262,7 @@ describe("buildOutline", () => {
   });
 
   test("output: always gives every node a children array", () => {
-    const outline = buildOutline([
+    const tree = groupHeadings([
       heading("x", 2, "X"),
       heading("y", 6, "Y"),
       heading("z", 2, "Z"),
@@ -272,42 +274,42 @@ describe("buildOutline", () => {
         if (Array.isArray(group.children)) walk(group.children);
       }
     };
-    walk(outline);
+    walk(tree);
   });
 
   test("purity: returns an empty array for empty input and does not mutate the input", () => {
     const input: Heading[] = [];
-    expect(buildOutline(input)).toEqual([]);
+    expect(groupHeadings(input)).toEqual([]);
 
     const input2 = [heading("one", 2, "One"), heading("two", 3, "Two")] as Heading[];
     const snapshot = JSON.stringify(input2);
-    buildOutline(input2);
+    groupHeadings(input2);
     expect(JSON.stringify(input2)).toBe(snapshot);
   });
 
   test("purity: returns fresh output objects that do not alias the input", () => {
     const input: readonly Heading[] = [heading("one", 2, "One")];
-    const [firstGroup] = buildOutline(input);
+    const [firstGroup] = groupHeadings(input);
     expect(firstGroup).not.toBe(input[0]);
     expect(firstGroup?.children).toEqual([]);
   });
 
   test("throws on an invalid ID, an empty-after-clean title, or a bad level", () => {
-    expect(() => buildOutline([heading("sp ace", 2, "Ok")])).toThrow();
-    expect(() => buildOutline([heading("ok", 2, "   ")])).toThrow();
+    expect(() => groupHeadings([heading("sp ace", 2, "Ok")])).toThrow();
+    expect(() => groupHeadings([heading("ok", 2, "   ")])).toThrow();
     // A JS caller can supply junk inside typed fields; the input boundary rejects it.
-    expect(() => buildOutline([{ ...heading("ok", 2, "Ok"), level: 0 } as unknown as Heading])).toThrow();
-    expect(() => buildOutline([{ ...heading("ok", 2, "Ok"), level: 7 } as unknown as Heading])).toThrow();
-    expect(() => buildOutline([{ ...heading("ok", 2, "Ok"), level: 2.5 } as unknown as Heading])).toThrow();
+    expect(() => groupHeadings([{ ...heading("ok", 2, "Ok"), level: 0 } as unknown as Heading])).toThrow();
+    expect(() => groupHeadings([{ ...heading("ok", 2, "Ok"), level: 7 } as unknown as Heading])).toThrow();
+    expect(() => groupHeadings([{ ...heading("ok", 2, "Ok"), level: 2.5 } as unknown as Heading])).toThrow();
   });
 
   test("throws on a duplicate ID across the input", () => {
-    expect(() => buildOutline([heading("dup", 2, "Dup"), heading("dup", 3, "Dup again")])).toThrow();
+    expect(() => groupHeadings([heading("dup", 2, "Dup"), heading("dup", 3, "Dup again")])).toThrow();
   });
 
   test("throws on non-heading junk supplied by a JS caller", () => {
-    expect(() => buildOutline([5] as unknown as readonly Heading[])).toThrow();
-    expect(() => buildOutline([{ ...heading("a", 2, "A"), level: "2" }] as unknown as readonly Heading[])).toThrow();
+    expect(() => groupHeadings([5] as unknown as readonly Heading[])).toThrow();
+    expect(() => groupHeadings([{ ...heading("a", 2, "A"), level: "2" }] as unknown as readonly Heading[])).toThrow();
   });
 });
 
@@ -326,11 +328,11 @@ describe("parseTrackingSource", () => {
     expect(parse({ targetIds: undefined, headings: undefined })).toThrow();
   });
 
-  test("parses the targetIds lane and adds no outline", () => {
+  test("parses the targetIds lane and adds no headings", () => {
     const source = parseTrackingSource({ targetIds: ["intro", "faq"], headings: undefined });
 
     expect(source).toEqual({ lane: "targetIds", targetIds: ["intro", "faq"] });
-    expect("outline" in source).toBe(false);
+    expect("headings" in source).toBe(false);
   });
 
   test("the targetIds lane keeps the collection boundary errors", () => {
@@ -338,40 +340,61 @@ describe("parseTrackingSource", () => {
     expect(parse({ targetIds: ["intro", "intro"] })).toThrow();
   });
 
-  test("derives the headings lane from built outline entries", () => {
+  test("derives the headings lane from the parsed entries", () => {
     const entries = [heading("intro", 2, "Intro"), heading("setup", 3, "Setup")];
     const source = parseTrackingSource({ targetIds: undefined, headings: entries });
 
     expect(source).toEqual({
       lane: "headings",
       targetIds: ["intro", "setup"],
-      outline: [
-        { ...heading("intro", 2, "Intro"), children: [{ ...heading("setup", 3, "Setup"), children: [] }] },
-      ],
+      headings: [heading("intro", 2, "Intro"), heading("setup", 3, "Setup")],
     });
   });
 
-  test("an empty headings list is a valid lane with an empty outline", () => {
+  test("the parsed entries are the tree in document order", () => {
+    const entries = [
+      heading("intro", 2, "Intro"),
+      heading("detail", 4, "Detail"),
+      heading("scope", 3, "Scope"),
+      heading("outro", 2, "Outro"),
+    ];
+    const source = parseTrackingSource({ headings: entries });
+
+    if (source.lane !== "headings") throw new Error("unreachable: one lane was provided");
+
+    const preOrder: { id: string; title: string; level: HeadingLevel }[] = [];
+    const walk = (groups: readonly HeadingNode[]) => {
+      for (const group of groups) {
+        preOrder.push({ id: group.id, title: group.title, level: group.level });
+        walk(group.children);
+      }
+    };
+    walk(groupHeadings(entries));
+
+    expect(source.headings).toEqual(preOrder);
+  });
+
+  test("an empty headings list is a valid lane with no entries", () => {
     expect(parseTrackingSource({ targetIds: undefined, headings: [] })).toEqual({
       lane: "headings",
       targetIds: [],
-      outline: [],
+      headings: [],
     });
   });
 
-  test("the headings lane validates through buildOutline only", () => {
+  test("the headings lane validates through groupHeadings only", () => {
     expect(parse({ headings: [heading("sp ace", 2, "Ok")] })).toThrow();
     expect(parse({ headings: [heading("dup", 2, "Dup"), heading("dup", 3, "Dup again")] })).toThrow();
     expect(parse({ headings: [{ ...heading("ok", 2, "Ok"), level: 0 } as unknown as Heading] })).toThrow();
   });
 
-  test("the derived collection and outline are fresh, not aliases of the input", () => {
+  test("the derived collection and entries are fresh, not aliases of the input", () => {
     const entries = [heading("one", 2, "One")] as readonly Heading[];
     const source = parseTrackingSource({ headings: entries });
 
     if (source.lane !== "headings") throw new Error("unreachable: one lane was provided");
     expect(source.targetIds).not.toBe(entries);
-    expect(source.outline[0]).not.toBe(entries[0]);
+    expect(source.headings[0]).not.toBe(entries[0]);
   });
 });
 
@@ -546,7 +569,7 @@ describe("SSR headings lane", () => {
   });
 });
 
-// Mixed-level outline: a skipped level nests the h5 under the h3 above it.
+// Mixed levels: a skipped level nests the h5 under the h3 above it.
 const GROUP_HEADINGS: readonly Heading[] = [
   heading("intro", 2, "Intro"),
   heading("setup", 3, "Setup"),
@@ -564,7 +587,7 @@ const flatItemForEntry = (entry: Heading): React.ReactElement =>
   );
 
 describe("SSR TocList function children", () => {
-  test("maps the Root-owned outline into one flat list in document order", () => {
+  test("maps the parsed entries into one flat list in document order", () => {
     const receivedIds: string[] = [];
     const markup = renderToStaticMarkup(
       React.createElement(
@@ -632,7 +655,7 @@ describe("SSR TocList function children", () => {
     expect(callbackCalls).toBe(0);
   });
 
-  test("throws in the targetIds lane, which owns no outline", () => {
+  test("throws in the targetIds lane, which owns no headings", () => {
     expect(() =>
       renderToStaticMarkup(
         React.createElement(
@@ -641,41 +664,41 @@ describe("SSR TocList function children", () => {
           React.createElement(TocList, { children: (entry: Heading) => entry.id }),
         ),
       ),
-    ).toThrow("TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.");
+    ).toThrow("TocList receives function children only when TocRoot owns headings; pass `headings` to TocRoot.");
   });
 });
 
-describe("useTocOutline SSR", () => {
-  test("returns the empty headings/outline pair on a null scope", () => {
+describe("useTocHeadings SSR", () => {
+  test("returns no headings on a null scope", () => {
     const probe = () => {
-      const { headings, outline } = useTocOutline(null);
-      return React.createElement("span", null, `${headings.length}:${outline.length}`);
+      const headings = useTocHeadings(null);
+      return React.createElement("span", null, `${headings.length}`);
     };
 
-    expect(renderToStaticMarkup(React.createElement(probe))).toContain(">0:0<");
+    expect(renderToStaticMarkup(React.createElement(probe))).toContain(">0<");
   });
 });
 
 describe("selectActiveValue", () => {
-  const outline = buildOutline([
+  const headings = [
     heading("intro", 2, "Intro"),
     heading("setup", 3, "Setup"),
-  ]);
+  ];
 
-  test("returns the current heading's title from a nested outline", () => {
-    expect(selectActiveValue(outline, "setup")).toBe("Setup");
+  test("returns the current heading's title from the entries", () => {
+    expect(selectActiveValue(headings, "setup")).toBe("Setup");
   });
 
   test("returns the target ID in the targetIds lane, where no titles exist", () => {
     expect(selectActiveValue(null, "intro")).toBe("intro");
   });
 
-  test("returns the target ID when the current ID is not in the outline", () => {
-    expect(selectActiveValue(outline, "other")).toBe("other");
+  test("returns the target ID when the current ID is not in the entries", () => {
+    expect(selectActiveValue(headings, "other")).toBe("other");
   });
 
   test("returns null while no target is current", () => {
-    expect(selectActiveValue(outline, null)).toBe(null);
+    expect(selectActiveValue(headings, null)).toBe(null);
     expect(selectActiveValue(null, null)).toBe(null);
   });
 });

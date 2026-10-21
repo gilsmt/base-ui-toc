@@ -86,7 +86,7 @@
 }
 
 /* One display: none subtree: the heading stays in the DOM and in the
-   outline, and the tracker sees a box-less target. */
+   list, and the tracker sees a box-less target. */
 .pg-dt-section-hidden {
   display: none;
 }

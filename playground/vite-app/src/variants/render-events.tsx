@@ -4,7 +4,7 @@ import {
   TocList,
   TocItem,
   TocLink,
-  useTocOutline,
+  useTocHeadings,
   type Heading,
   type TocActions,
 } from "../../../../src/table-of-contents";
@@ -25,7 +25,7 @@ export function RenderEvents() {
   const [isBannerMounted, setIsBannerMounted] = React.useState(false);
 
   // Mount-time snapshot: discovery runs once per article identity; refresh() re-measures without re-discovery.
-  const { headings } = useTocOutline(article);
+  const headings = useTocHeadings(article);
 
   return (
     <div className="pg-rv">

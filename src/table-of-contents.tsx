@@ -68,7 +68,7 @@ const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX =
 const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
 
 const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
-    "TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.";
+    "TocList receives function children only when TocRoot owns headings; pass `headings` to TocRoot.";
 
 const OWNERSHIP_WARNING_MESSAGE =
     "Skipped a target that resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
@@ -79,17 +79,17 @@ const INVALID_DISCOVERY_LEVEL_MESSAGE =
 const EMPTY_HEADING_TITLE_MESSAGE =
     "Heading title is empty after whitespace cleaning.";
 
-const INVALID_OUTLINE_ID_MESSAGE_PREFIX =
-    "Invalid heading ID in buildOutline input: ";
+const INVALID_HEADING_ID_MESSAGE_PREFIX =
+    "Invalid heading ID in groupHeadings input: ";
 
-const INVALID_OUTLINE_LEVEL_MESSAGE =
-    "Invalid heading level in buildOutline input: it must be an integer from 1 to 6.";
+const INVALID_HEADING_LEVEL_MESSAGE =
+    "Invalid heading level in groupHeadings input: it must be an integer from 1 to 6.";
 
-const INVALID_OUTLINE_TITLE_MESSAGE =
-    "Invalid heading title in buildOutline input: it must be a string.";
+const INVALID_HEADING_TITLE_MESSAGE =
+    "Invalid heading title in groupHeadings input: it must be a string.";
 
-const DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX =
-    "Duplicate heading ID in buildOutline input: ";
+const DUPLICATE_HEADING_ID_MESSAGE_PREFIX =
+    "Duplicate heading ID in groupHeadings input: ";
 
 const EMPTY_PART_STATE: Record<string, never> = {};
 
@@ -105,13 +105,12 @@ export interface Heading {
     level: HeadingLevel;
 }
 
-export interface HeadingGroup extends Heading {
-    children: readonly HeadingGroup[];
+export interface HeadingNode extends Heading {
+    children: readonly HeadingNode[];
 }
 
-// Mutable-children draft node; the returned trees still satisfy HeadingGroup.
-interface HeadingGroupDraft extends Heading {
-    children: HeadingGroupDraft[];
+interface HeadingNodeDraft extends Heading {
+    children: HeadingNodeDraft[];
 }
 
 export interface TocTargetGeometry {
@@ -126,7 +125,6 @@ export interface TocGeometrySample {
     hasSurfaceBottomReached: boolean;
 }
 
-// Part states are interfaces because useRenderElement's State must extend Record<string, any>; empty ones stay empty.
 export interface TocRootState {
     currentId: string | null;
 }
@@ -145,7 +143,7 @@ export interface TocActions {
 
 interface TocRootContextValue {
     targetIds: readonly string[];
-    outline: readonly HeadingGroup[] | null;
+    headings: readonly Heading[] | null;
     currentId: string | null;
 }
 
@@ -157,7 +155,6 @@ export function isValidTargetId(candidate: unknown): candidate is string {
     return !UNPAIRED_SURROGATE_PATTERN.test(candidate);
 }
 
-/** Throws unless every entry is a valid, unique target ID; returns a fresh array. */
 export function parseTargetCollection(
     targetIds: readonly unknown[],
 ): readonly string[] {
@@ -166,8 +163,10 @@ export function parseTargetCollection(
     for (const candidate of targetIds) {
         if (!isValidTargetId(candidate))
             throw new Error(INVALID_COLLECTION_MESSAGE);
+
         if (seenIds.has(candidate))
             throw new Error(DUPLICATE_TARGET_MESSAGE_PREFIX + candidate);
+
         seenIds.add(candidate);
         parsedIds.push(candidate);
     }
@@ -185,17 +184,12 @@ export function isValidActivationOffset(
     );
 }
 
-/** Parses an activation offset; throws on an invalid value. */
 function parseActivationOffset(candidate: unknown): number {
     if (!isValidActivationOffset(candidate))
         throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
     return candidate;
 }
 
-/**
- * Pure selection step: the last crossed target in configured order; when
- * nothing crossed and the bottom is reached, the last available target.
- */
 export function selectCurrentTargetId(
     sample: TocGeometrySample,
 ): string | null {
@@ -229,18 +223,18 @@ function isHeadingLevelValue(candidate: unknown): candidate is HeadingLevel {
 }
 
 /**
- * Pure outline builder: an entry at level L collects the following deeper
- * entries until a level ≤ L appears; skipped levels nest under the last shallower entry.
+ * Groups headings into a tree: an entry at level L collects the following
+ * deeper entries until a level ≤ L appears; skipped levels nest under the
+ * last shallower entry.
  */
-export function buildOutline(
+export function groupHeadings(
     headings: readonly Heading[],
-): readonly HeadingGroup[] {
-    const cleanedHeadings = parseOutlineHeadings(headings);
-
-    const topGroups: HeadingGroupDraft[] = [];
-    const openGroups: HeadingGroupDraft[] = [];
+): readonly HeadingNode[] {
+    const cleanedHeadings = parseHeadings(headings);
+    const topGroups: HeadingNodeDraft[] = [];
+    const openGroups: HeadingNodeDraft[] = [];
     for (const entry of cleanedHeadings) {
-        const group: HeadingGroupDraft = {
+        const group: HeadingNodeDraft = {
             id: entry.id,
             title: entry.title,
             level: entry.level,
@@ -258,26 +252,27 @@ export function buildOutline(
     return topGroups;
 }
 
-// Outline boundary: validate consumer entries and return cleaned copies in
-// input order, so grouping above never re-cleans or re-validates.
-function parseOutlineHeadings(
-    headings: readonly Heading[],
-): readonly Heading[] {
+function parseHeadings(headings: readonly Heading[]): readonly Heading[] {
+    // Validate the entries and return cleaned copies in input order, so the
+    // grouping never re-cleans or re-validates.
     const cleanedHeadings: Heading[] = [];
     const seenIds = new Set<string>();
     for (const entry of headings) {
         if (!isValidTargetId(entry.id))
             throw new Error(
-                INVALID_OUTLINE_ID_MESSAGE_PREFIX + String(entry.id),
+                INVALID_HEADING_ID_MESSAGE_PREFIX + String(entry.id),
             );
+
         if (!isHeadingLevelValue(entry.level))
-            throw new Error(INVALID_OUTLINE_LEVEL_MESSAGE);
-        // A JS caller can pass a non-string title inside a typed field; reject it before cleaning so no TypeError escapes.
+            throw new Error(INVALID_HEADING_LEVEL_MESSAGE);
+
         if (typeof entry.title !== "string")
-            throw new Error(INVALID_OUTLINE_TITLE_MESSAGE);
-        const cleanedTitle = cleanHeadingTitle(entry.title);
+            throw new Error(INVALID_HEADING_TITLE_MESSAGE);
+
         if (seenIds.has(entry.id))
-            throw new Error(DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX + entry.id);
+            throw new Error(DUPLICATE_HEADING_ID_MESSAGE_PREFIX + entry.id);
+
+        const cleanedTitle = cleanHeadingTitle(entry.title);
         cleanedHeadings.push({
             id: entry.id,
             title: cleanedTitle,
@@ -288,19 +283,18 @@ function parseOutlineHeadings(
     return cleanedHeadings;
 }
 
-/** The Root's tracking lane; the union makes the absent lane unrepresentable. */
 export type TocTrackingSource =
     | { lane: "targetIds"; targetIds: readonly string[] }
     | {
           lane: "headings";
           targetIds: readonly string[];
-          outline: readonly HeadingGroup[];
+          headings: readonly Heading[];
       };
 
 /**
  * Tracking boundary: the two-lanes error precedes the absent-lane error, and
- * lane discrimination precedes per-lane parsing. The `headings` lane builds
- * the outline and derives its id collection from the entries.
+ * lane discrimination precedes per-lane parsing. The `headings` lane parses
+ * the entries and derives its id collection from them.
  */
 export function parseTrackingSource(props: {
     targetIds?: readonly string[] | undefined;
@@ -315,18 +309,24 @@ export function parseTrackingSource(props: {
             targetIds: parseTargetCollection(targetIds),
         };
     if (headings !== undefined) {
-        const outline = buildOutline(headings);
+        // The same validation groupHeadings applies; only the grouping is left out.
+        const parsedHeadings = parseHeadings(headings);
         return {
             lane: "headings",
-            // buildOutline validated every id, so this projection never re-runs the collection parser.
-            targetIds: headings.map((heading) => heading.id),
-            outline,
+            // The parsed entries validated every id, so this projection never re-runs the collection parser.
+            targetIds: parsedHeadings.map((heading) => heading.id),
+            headings: parsedHeadings,
         };
     }
     throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
 }
 
-/** Document-order heading snapshot with cleaned titles; it reads no layout. */
+/**
+ * Document-order heading snapshot with cleaned titles; it reads no layout.
+ *
+ * A heading that cannot be represented is left out and reported: document
+ * content is not consumer code.
+ */
 export function discoverHeadings(
     scope: Element,
     options?: { levels?: readonly HeadingLevel[] },
@@ -376,7 +376,6 @@ export function discoverHeadings(
     return headings;
 }
 
-/** Names a heading for a report: its tag, its id, and its text. */
 function describeHeading(element: Element, rawTitle: string): string {
     const tag = element.tagName.toLowerCase();
     const id = element.getAttribute("id");
@@ -399,8 +398,8 @@ function readDiscoveryLevels(options?: {
     return levels;
 }
 
-// Excludes `hidden` and `aria-hidden="true"` subtrees, script/style, and comments.
 function collectTitleText(element: Element, fragments: string[]): void {
+    // Excludes `hidden` and `aria-hidden="true"` subtrees, script/style, and comments.
     for (const child of element.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
             fragments.push(child.nodeValue ?? "");
@@ -420,12 +419,10 @@ function collectTitleText(element: Element, fragments: string[]): void {
 }
 
 /**
- * Client-side outline snapshot for `scope`, one discovery per scope identity; a `null` scope and every server render yield the empty pair.
+ * Client-side heading snapshot for `scope`, one discovery per scope identity;
+ * a `null` scope and every server render yield no headings.
  */
-export function useTocOutline(scope: Element | null): {
-    headings: readonly Heading[];
-    outline: readonly HeadingGroup[];
-} {
+export function useTocHeadings(scope: Element | null): readonly Heading[] {
     const [headings, setHeadings] =
         React.useState<readonly Heading[]>(EMPTY_HEADINGS);
 
@@ -438,9 +435,7 @@ export function useTocOutline(scope: Element | null): {
         setHeadings(discoverHeadings(scope));
     }, [scope]);
 
-    const outline = React.useMemo(() => buildOutline(headings), [headings]);
-
-    return { headings, outline };
+    return headings;
 }
 
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(
@@ -483,22 +478,14 @@ function useTocTracker(trackerProps: {
 
     const navElementRef = React.useRef<HTMLElement | null>(null);
     const currentIdRef = React.useRef<string | null>(null);
-    // The last configuration commit; measurements read it so a scroll-event
-    // question between the reads and the state write sees committed props.
     const committedPropsRef = useRefWithInit(() => ({
         targetIds,
         scrollElement,
         activationOffset,
     }));
-
-    // Scheduled work coalesces into one measurement per frame: request() clears
-    // the previous call, and cancel() is idempotent, so the commit-effect
-    // cleanups can cancel unconditionally.
-    const raf = useAnimationFrame();
-
     const [currentId, setCurrentIdState] = React.useState<string | null>(null);
+    const animationFrame = useAnimationFrame();
 
-    // A replaced callback identity must not re-notify, and an absent callback is a no-op.
     const notifyCurrentIdChange = useStableCallback(onCurrentChange);
 
     const publishCurrentId = useStableCallback((nextId: string | null) => {
@@ -611,8 +598,8 @@ function useTocTracker(trackerProps: {
     }, [publishCurrentId]);
 
     const scheduleMeasurement = React.useCallback(() => {
-        raf.request(measureAndPublish);
-    }, [measureAndPublish, raf]);
+        animationFrame.request(measureAndPublish);
+    }, [measureAndPublish, animationFrame]);
 
     // refresh() remeasures and never scrolls; the unmount cleanup nulls the handle only while it is current.
     useIsoLayoutEffect(() => {
@@ -676,7 +663,7 @@ function useTocTracker(trackerProps: {
             return () => {
                 detachScrollEvent();
                 detachResizeEvent();
-                raf.cancel();
+                animationFrame.cancel();
             };
         }
 
@@ -696,12 +683,12 @@ function useTocTracker(trackerProps: {
         return () => {
             detachScrollEvent();
             surfaceObserver.disconnect();
-            raf.cancel();
+            animationFrame.cancel();
         };
     }, [
         activationOffset,
         publishCurrentId,
-        raf,
+        animationFrame,
         scheduleMeasurement,
         scrollElement,
         targetIds,
@@ -710,8 +697,6 @@ function useTocTracker(trackerProps: {
     return { currentId, navElementRef };
 }
 
-// The shared composition interface: native props merge, and each part
-// destructures `ref` because `mergeProps` ignores it and would silently drop it.
 type TocCompositionProps<
     ElementType extends React.ElementType,
     State,
@@ -732,7 +717,7 @@ type TocCompositionProps<
 export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
     /** The `targetIds` lane; mutually exclusive with `headings`. Immutable snapshot, replace it to reconfigure. */
     targetIds?: readonly string[] | undefined;
-    /** The `headings` lane, mutually exclusive with `targetIds`; the Root derives the collection and outline. */
+    /** The `headings` lane, mutually exclusive with `targetIds`; the Root parses the entries and derives the collection from them. */
     headings?: readonly Heading[] | undefined;
     /** The tracked scrolling surface; omit for the document viewport, pass `null` to deactivate tracking. */
     scrollElement?: Element | null | undefined;
@@ -744,7 +729,6 @@ export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
     actionsRef?: React.RefObject<TocActions | null> | undefined;
 }
 
-// `currentId` must not emit a `data-current-id` attribute; the root exposes `data-has-current` instead.
 const TOC_ROOT_STATE_ATTRIBUTES_MAPPING = { currentId: () => null };
 
 /** The tracked navigation landmark; renders a `<nav>` with a default label consumers can override. */
@@ -763,8 +747,6 @@ export function TocRoot(componentProps: TocRootProps) {
         ...elementProps
     } = componentProps;
 
-    // Input boundaries: parse once per render so the commit effect keeps
-    // dependency identity; the collection is fresh only when its source prop value is.
     const trackedSource = React.useMemo(
         () => parseTrackingSource({ targetIds, headings }),
         [targetIds, headings],
@@ -777,16 +759,15 @@ export function TocRoot(componentProps: TocRootProps) {
         actionsRef,
     });
 
+    const trackedHeadings =
+        trackedSource.lane === "headings" ? trackedSource.headings : null;
     const contextValue: TocRootContextValue = React.useMemo(
         () => ({
             targetIds: trackedSource.targetIds,
-            outline:
-                trackedSource.lane === "headings"
-                    ? trackedSource.outline
-                    : null,
+            headings: trackedHeadings,
             currentId: tracker.currentId,
         }),
-        [trackedSource, tracker.currentId],
+        [trackedSource.targetIds, trackedHeadings, tracker.currentId],
     );
 
     const state: TocRootState = { currentId: tracker.currentId };
@@ -799,7 +780,6 @@ export function TocRoot(componentProps: TocRootProps) {
             ref: [ref, tracker.navElementRef],
             stateAttributesMapping: TOC_ROOT_STATE_ATTRIBUTES_MAPPING,
             props: [
-                // Keep the default first so consumer-provided labels override it.
                 DEFAULT_ROOT_LABEL_PROPS,
                 elementProps,
                 (props) => ({
@@ -823,17 +803,13 @@ export interface TocListProps extends TocCompositionProps<
     TocListState,
     "children"
 > {
-    /**
-     * Function children receive one outline entry per call in document order;
-     * the part authors each key from the entry id, so the callback needs no key.
-     */
     children?:
         React.ReactNode | ((entry: Heading) => React.ReactNode) | undefined;
 }
 
-/** A flat ordered list of outline entries. */
+/** A flat ordered list of heading entries. */
 export function TocList(componentProps: TocListProps) {
-    const rootContext = React.useContext(TocRootContext);
+    const context = React.useContext(TocRootContext);
     const {
         className,
         style,
@@ -843,10 +819,10 @@ export function TocList(componentProps: TocListProps) {
         ...elementProps
     } = componentProps;
 
-    const outline = rootContext === undefined ? null : rootContext.outline;
+    const headings = context === undefined ? null : context.headings;
     const children =
         typeof childrenProp === "function"
-            ? renderOutlineEntries(childrenProp, outline)
+            ? renderHeadingEntries(childrenProp, headings)
             : childrenProp;
 
     return useRenderElement<TocListState, HTMLOListElement, "ol">(
@@ -860,61 +836,32 @@ export function TocList(componentProps: TocListProps) {
     );
 }
 
-function renderOutlineEntries(
+function renderHeadingEntries(
     renderEntry: (entry: Heading) => React.ReactNode,
-    outline: readonly HeadingGroup[] | null,
+    headings: readonly Heading[] | null,
 ): React.ReactNode {
-    if (outline === null)
+    if (headings === null)
         throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
-
-    return flattenOutline(outline).map((entry) => (
+    return headings.map((entry) => (
         <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
     ));
 }
 
-function flattenOutline(
-    outline: readonly HeadingGroup[],
-    flatEntries: Heading[] = [],
-): readonly Heading[] {
-    for (const group of outline) {
-        flatEntries.push({
-            id: group.id,
-            title: group.title,
-            level: group.level,
-        });
-        flattenOutline(group.children, flatEntries);
-    }
-    return flatEntries;
-}
-
-/**
- * The active item's value: the current heading's title in the `headings` lane,
- * and the current target ID in the `targetIds` lane, where no titles exist.
- */
 export function selectActiveValue(
-    outline: readonly HeadingGroup[] | null,
+    headings: readonly Heading[] | null,
     currentId: string | null,
 ): string | null {
     if (currentId === null) return null;
-    if (outline === null) return currentId;
-    return findHeadingTitle(outline, currentId) ?? currentId;
-}
-
-function findHeadingTitle(
-    outline: readonly HeadingGroup[],
-    targetId: string,
-): string | null {
-    for (const group of outline) {
-        if (group.id === targetId) return group.title;
-        const childTitle = findHeadingTitle(group.children, targetId);
-        if (childTitle !== null) return childTitle;
+    if (headings === null) return currentId;
+    for (const heading of headings) {
+        if (heading.id === currentId) return heading.title;
     }
-    return null;
+    return currentId;
 }
 
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
 
-/** An entry of the flat outline; nested lists are consumer-authored from `buildOutline` when wanted. */
+/** An entry of the flat list; nested lists are consumer-authored from `groupHeadings` when wanted. */
 export function TocItem(componentProps: TocItemProps) {
     const { className, style, render, ref, ...elementProps } = componentProps;
 
@@ -940,17 +887,17 @@ export interface TocLinkProps extends TocCompositionProps<
 
 /** A fragment link to one configured target; component-owned `href` and `aria-current` beat consumer values. */
 export function TocLink(componentProps: TocLinkProps) {
-    const rootContext = React.useContext(TocRootContext);
+    const context = React.useContext(TocRootContext);
     const { targetId, className, style, render, ref, ...elementProps } =
         componentProps;
 
     if (!isValidTargetId(targetId))
         throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
-    if (rootContext === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
-    if (!rootContext.targetIds.includes(targetId))
+    if (context === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
+    if (!context.targetIds.includes(targetId))
         throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
 
-    const state: TocLinkState = { current: rootContext.currentId === targetId };
+    const state: TocLinkState = { current: context.currentId === targetId };
 
     return useRenderElement<TocLinkState, HTMLAnchorElement, "a">(
         "a",
@@ -973,10 +920,6 @@ export function TocLink(componentProps: TocLinkProps) {
 }
 
 export interface TocValueProps {
-    /**
-     * Renders the value. A function receives it, so the consumer can format it
-     * or label the empty state.
-     */
     children?: ((value: string | null) => React.ReactNode) | undefined;
 }
 
@@ -985,9 +928,9 @@ export interface TocValueProps {
  * target ID in the `targetIds` lane. Renders no element.
  */
 export function TocValue({ children }: TocValueProps) {
-    const rootContext = React.useContext(TocRootContext);
-    if (rootContext === undefined) throw new Error(VALUE_OUTSIDE_ROOT_MESSAGE);
+    const context = React.useContext(TocRootContext);
+    if (context === undefined) throw new Error(VALUE_OUTSIDE_ROOT_MESSAGE);
 
-    const value = selectActiveValue(rootContext.outline, rootContext.currentId);
+    const value = selectActiveValue(context.headings, context.currentId);
     return typeof children === "function" ? children(value) : value;
 }

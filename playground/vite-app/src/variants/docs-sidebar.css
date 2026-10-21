@@ -13,7 +13,7 @@
   top: var(--pg-header-height);
 }
 
-/* Plain outline typography; the parts render unstyled structure. */
+/* Plain navigation typography; the parts render unstyled structure. */
 .pg-docs-nav ol {
   margin: 0;
   padding: 0;

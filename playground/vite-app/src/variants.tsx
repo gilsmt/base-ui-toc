@@ -17,7 +17,7 @@ export const variants: VariantEntry[] = [
   {
     id: "docs-sidebar",
     label: "Document scroll",
-    description: "useTocOutline snapshot + document viewport tracking",
+    description: "useTocHeadings snapshot + document viewport tracking",
     element: <DocsSidebar />,
   },
   {

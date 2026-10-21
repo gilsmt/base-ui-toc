@@ -5,7 +5,7 @@ import {
   TocItem,
   TocLink,
   TocValue,
-  useTocOutline,
+  useTocHeadings,
   type Heading,
 } from "../../../../src/table-of-contents";
 import "./docs-sidebar.css";
@@ -19,7 +19,7 @@ export function DocsSidebar() {
 
   // Discovery runs in a layout effect per article identity, not during render;
   // the attachment goes through callback-ref state.
-  const { headings } = useTocOutline(article);
+  const headings = useTocHeadings(article);
 
   return (
     <div className="pg-docs">
@@ -45,7 +45,7 @@ export function DocsSidebar() {
         <section>
           <h2 id="overview">Overview</h2>
           <p>
-            The outline on the left lists the sections of this document and
+            The table of contents on the left lists the sections of this document and
             the tracker keeps one current location while the reader scrolls.
           </p>
           <FillerParagraphs count={3} />
@@ -73,7 +73,7 @@ export function DocsSidebar() {
             <h3 id="setup-requirements">Requirements</h3>
             <p>
               The page needs a modern browser and a long article; nothing else
-              is shared with the outline.
+              is shared with the table of contents.
             </p>
             <FillerParagraphs count={2} />
           </section>
