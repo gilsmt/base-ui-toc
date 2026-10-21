@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRenderElement } from "@base-ui/react/internals/useRenderElement";
 import type { ComponentRenderFn, HTMLProps } from "@base-ui/react/use-render";
 import { addEventListener } from "@base-ui/utils/addEventListener";
+import { createLogOnce } from "@base-ui/utils/createLogOnce";
 import { useAnimationFrame } from "@base-ui/utils/useAnimationFrame";
 import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
@@ -69,15 +70,11 @@ const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
 const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
     "TocList receives function children only when TocRoot owns an outline; pass `headings` to TocRoot.";
 
-const OWNERSHIP_ERROR_MESSAGE =
-    "Toc target resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
+const OWNERSHIP_WARNING_MESSAGE =
+    "Skipped a target that resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
 
 const INVALID_DISCOVERY_LEVEL_MESSAGE =
     "Invalid levels option: values must be integers from 1 to 6.";
-
-const INVALID_DISCOVERY_ID_MESSAGE_PREFIX = "Invalid target ID on heading: ";
-
-const DUPLICATE_DISCOVERY_ID_MESSAGE_PREFIX = "Duplicate heading ID: ";
 
 const EMPTY_HEADING_TITLE_MESSAGE =
     "Heading title is empty after whitespace cleaning.";
@@ -97,6 +94,8 @@ const DUPLICATE_OUTLINE_ID_MESSAGE_PREFIX =
 const EMPTY_PART_STATE: Record<string, never> = {};
 
 const EMPTY_HEADINGS: readonly Heading[] = [];
+
+const warn = createLogOnce("warn", "base-ui-toc");
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -344,19 +343,46 @@ export function discoverHeadings(
         if (level === undefined) continue;
         if (!selectedLevelSet.has(level)) continue;
 
-        const id = headingElement.getAttribute("id");
-        if (!isValidTargetId(id))
-            throw new Error(INVALID_DISCOVERY_ID_MESSAGE_PREFIX + String(id));
-        if (seenIds.has(id))
-            throw new Error(DUPLICATE_DISCOVERY_ID_MESSAGE_PREFIX + id);
-        seenIds.add(id);
-
         const fragments: string[] = [];
         collectTitleText(headingElement, fragments);
-        const title = cleanHeadingTitle(fragments.join(""));
-        headings.push({ id, title, level });
+        const rawTitle = fragments.join("");
+
+        const id = headingElement.getAttribute("id");
+        if (!isValidTargetId(id)) {
+            warn(
+                `Skipped ${describeHeading(headingElement, rawTitle)}: it has no valid id, so it cannot be a link target.`,
+            );
+            continue;
+        }
+        // The first heading with an id owns it: a later duplicate resolves to
+        // the first one, so the later heading is unreachable.
+        if (seenIds.has(id)) {
+            warn(
+                `Skipped ${describeHeading(headingElement, rawTitle)}: the id "${id}" already belongs to an earlier heading.`,
+            );
+            continue;
+        }
+        seenIds.add(id);
+
+        if (rawTitle.trim() === "") {
+            warn(
+                `Skipped ${describeHeading(headingElement, rawTitle)}: it has no text to show.`,
+            );
+            continue;
+        }
+
+        headings.push({ id, title: cleanHeadingTitle(rawTitle), level });
     }
     return headings;
+}
+
+/** Names a heading for a report: its tag, its id, and its text. */
+function describeHeading(element: Element, rawTitle: string): string {
+    const tag = element.tagName.toLowerCase();
+    const id = element.getAttribute("id");
+    const text = rawTitle.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
+    const idPart = id === null ? "" : ` id="${id}"`;
+    return `<${tag}${idPart}> "${text}"`;
 }
 
 function readDiscoveryLevels(options?: {
@@ -549,14 +575,20 @@ function useTocTracker(trackerProps: {
                 targetsGeometry.push({ id: targetId, headroomPx: null });
                 continue;
             }
-            // Ownership: a target outside its scroller throws while the measurement
-            // runs; contains() is inclusive, so the scroller itself is excluded.
+            // Ownership: a target outside its scroller cannot be measured
+            // against it, so it stays unavailable; contains() is inclusive, so
+            // the scroller itself is excluded.
             if (surfaceElement !== null) {
                 const isTargetOwnedByScroller =
                     targetElement !== surfaceElement &&
                     surfaceElement.contains(targetElement);
-                if (!isTargetOwnedByScroller)
-                    throw new Error(OWNERSHIP_ERROR_MESSAGE);
+                if (!isTargetOwnedByScroller) {
+                    warn(
+                        `${OWNERSHIP_WARNING_MESSAGE} Skipped the target "${targetId}".`,
+                    );
+                    targetsGeometry.push({ id: targetId, headroomPx: null });
+                    continue;
+                }
             }
             if (targetElement.getClientRects().length === 0) {
                 targetsGeometry.push({ id: targetId, headroomPx: null });

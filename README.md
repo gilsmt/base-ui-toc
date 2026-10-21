@@ -128,7 +128,7 @@ const headings2To3 = discoverHeadings(article, { levels: [2, 3] });
 
 Titles come from the heading text, with `hidden` and `aria-hidden="true"` subtrees removed, `script` and `style` removed, trimmed, and whitespace runs collapsed to single spaces. Mark permalink icons and other decorations with one of those attributes yourself; the utility does not guess.
 
-Discovery is a snapshot with no layout reads: content changes require another call. It throws when a selected heading has a missing or invalid ID, a duplicate ID, or an empty title after cleaning.
+Discovery is a snapshot with no layout reads: content changes require another call. A heading that cannot be represented is left out and reported: document content is not consumer code. The consumer-supplied boundaries still throw: `buildOutline` rejects a malformed entry, and `parseTargetCollection` rejects a malformed collection.
 
 ### `buildOutline`
 
@@ -314,7 +314,7 @@ At each measurement, the current target is the **last crossed** target in collec
 
 The output is only `currentId: string | null`. There is no progress value, no visible-target set, no per-target visibility, and no direction signal; compose such UI outside the core.
 
-Unavailable targets — missing elements and box-less elements — participate in neither the crossing rule nor the bottom exception. They re-resolve at every measurement, which repairs same-ID node replacement without any collection change.
+Unavailable targets — missing elements, box-less elements, and elements outside the tracked scroller — participate in neither the crossing rule nor the bottom exception. They re-resolve at every measurement, which repairs same-ID node replacement without any collection change.
 
 ### When tracking runs
 
@@ -333,7 +333,7 @@ Documented gaps — with no trigger, not bugs:
 
 Reaching a moved position still needs a scroll; otherwise the content owner calls `refresh()`. The component runs no `MutationObserver`, no interval, and no continuous polling.
 
-A `TocLink`'s membership and the collection's validity throw synchronously at render. An element-mode target that resolves outside its configured scroller throws during the measurement effect, because targets in element mode must be DOM descendants of the scroller. The error surfaces as an uncaught exception from the scheduled measurement callback, and React error boundaries do not catch it. The error repeats on every scheduled event while the configuration stays broken.
+A `TocLink`'s membership and the collection's validity throw synchronously at render. An element-mode target that resolves outside its configured scroller cannot be measured against that scroller, so it stays unavailable and the skip is reported in development.
 
 ## Server rendering and StrictMode
 
