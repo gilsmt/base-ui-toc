@@ -2,7 +2,7 @@
 
 An unstyled, copy-and-paste Table of Contents for in-page navigation in React 19 projects. It tracks one current location in the content while the reader scrolls, and it renders native fragment links that move the reader to sections. Made to be used alongside [Base UI](https://base-ui.com).
 
-[Try it in the playground](https://base-ui-toc-playground.vercel.app) — four worked use cases: document scroll, an embedded scroll area, a custom renderer with the tracker's events, and a collection that changes while the reader scrolls.
+[Try it in the playground](https://base-ui-toc-playground.vercel.app)
 
 ## Use
 
