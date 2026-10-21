@@ -479,8 +479,16 @@ function useTocTracker(trackerProps: {
         if (currentIdRef.current === nextId) return;
         currentIdRef.current = nextId;
         setCurrentIdState(nextId);
-        notifyCurrentIdChange(nextId);
     });
+
+    // The notification runs after the commit, so the DOM already shows the new
+    // current link.
+    const notifiedIdRef = React.useRef<string | null>(null);
+    useIsoLayoutEffect(() => {
+        if (notifiedIdRef.current === currentId) return;
+        notifiedIdRef.current = currentId;
+        notifyCurrentIdChange(currentId);
+    }, [currentId, notifyCurrentIdChange]);
 
     const measureAndPublish = React.useCallback(() => {
         const {

@@ -340,7 +340,7 @@ A `TocLink`'s membership and the collection's validity throw synchronously at re
 - The server render, the first client render, and an empty collection produce the same markup: `currentId` is `null`, with no loading placeholders and no automatic hiding of empty outlines. You can render the full nav, lists, items, and links on the server, because a link's `href` is a pure function of its `targetId` — and the `headings` lane's function children map from prop data the server also holds.
 - Discovery is client-only and never runs in render. If your content depends on the discovered outline, produce matching server markup yourself, or render the navigation after hydration; the component does not reconcile the two.
 - After hydration, the first measurement can notify a change. The first measured `null` does not notify; the first measured non-null value does.
-- Under StrictMode, effects and callback refs replay, and cleanups cancel pending work. A replay can re-emit the first measured value on the new instance; nothing else notifies.
+- Under StrictMode, effects and callback refs replay, and cleanups cancel pending work. The replayed effects measure once, so the first value is notified once. A remounted instance measures again and notifies its own first value.
 - Without JavaScript, the links navigate natively. Tracking, `data-current`, and `refresh()` are inert.
 
 ## Preconditions and limitations
