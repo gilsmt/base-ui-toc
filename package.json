@@ -26,6 +26,8 @@
     },
     "scripts": {
         "type-check": "tsc --noEmit",
+        "test": "bun test && bun run test:client",
+        "test:client": "bun test ./test/client/client-behavior.tsx",
         "playground:dev": "bun --cwd=playground/vite-app run dev",
         "playground:build": "bun --cwd=playground/vite-app run build"
     },
@@ -41,6 +43,7 @@
         "@types/node": "^26.6.5",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
+        "happy-dom": "^21.0.4",
         "mitata": "^1.0.34",
         "typescript": "7.0.2"
     },
