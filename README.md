@@ -163,7 +163,7 @@ const [article, setArticle] = useState<HTMLElement | null>(null);
 const headings = useTocHeadings(article);
 ```
 
-A `null` or unmounted scope yields no headings. Scope is the only input, so a scope identity change is the only re-discovery trigger; the hook does not watch the DOM, so content that mutates under the same element needs an explicit `discoverHeadings` call (like the dynamic-targets playground variant). On the server, every render yields the empty pair, because layout effects never run there and no `document` read escapes the effect callbacks.
+A `null` or unmounted scope yields no headings. Scope is the only input, so a scope identity change is the only re-discovery trigger; the hook does not watch the DOM, so content that mutates under the same element needs an explicit `discoverHeadings` call (like the dynamic-targets playground variant). On the server, every render yields an empty heading list, because layout effects never run there and no `document` read escapes the effect callbacks.
 
 The root parses the headings you pass into entries: `TocList` maps those entries in document order, and `TocValue` reads the current entry's title. Build a nested tree yourself with `groupHeadings` when you want one.
 
