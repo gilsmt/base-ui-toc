@@ -57,9 +57,5 @@
         "incremental": true,
     },
     "include": ["src", "test"],
-    "exclude": [
-        "node_modules",
-        "playground",
-        "dist",
-    ],
+    "exclude": ["node_modules", "playground", "dist"],
 }
