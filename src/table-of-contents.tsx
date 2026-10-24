@@ -49,6 +49,9 @@ const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
 const INVALID_COLLECTION_MESSAGE =
     "Invalid target ID in targetIds: every entry must be a valid, unique target ID.";
 
+const INVALID_TARGET_COLLECTION_MESSAGE =
+    "Invalid targetIds: expected an array of target IDs.";
+
 const DUPLICATE_TARGET_MESSAGE_PREFIX = "Duplicate target ID: ";
 
 const INVALID_ACTIVATION_OFFSET_MESSAGE =
@@ -88,8 +91,20 @@ const INVALID_HEADING_LEVEL_MESSAGE =
 const INVALID_HEADING_TITLE_MESSAGE =
     "Invalid heading title in groupHeadings input: it must be a string.";
 
+const INVALID_HEADINGS_COLLECTION_MESSAGE =
+    "Invalid headings: expected an array of heading records.";
+
+const INVALID_HEADING_RECORD_MESSAGE =
+    "Invalid heading: expected an object with id, title, and level fields.";
+
 const DUPLICATE_HEADING_ID_MESSAGE_PREFIX =
     "Duplicate heading ID in groupHeadings input: ";
+
+const INVALID_SCROLL_ELEMENT_MESSAGE =
+    "Invalid scrollElement: pass a DOM Element, null, or undefined.";
+
+const SCROLL_ELEMENT_DOCUMENT_MESSAGE =
+    "Invalid scrollElement: it must belong to the same document as TocRoot.";
 
 const EMPTY_PART_STATE: Record<string, never> = {};
 
@@ -155,9 +170,10 @@ export function isValidTargetId(candidate: unknown): candidate is string {
     return !UNPAIRED_SURROGATE_PATTERN.test(candidate);
 }
 
-export function parseTargetCollection(
-    targetIds: readonly unknown[],
-): readonly string[] {
+export function parseTargetCollection(targetIds: unknown): readonly string[] {
+    if (!isUnknownArray(targetIds))
+        throw new Error(INVALID_TARGET_COLLECTION_MESSAGE);
+
     const parsedIds: string[] = [];
     const seenIds = new Set<string>();
     for (const candidate of targetIds) {
@@ -252,35 +268,49 @@ export function groupHeadings(
     return topGroups;
 }
 
-function parseHeadings(headings: readonly Heading[]): readonly Heading[] {
+function parseHeadings(headings: unknown): readonly Heading[] {
+    if (!isUnknownArray(headings))
+        throw new Error(INVALID_HEADINGS_COLLECTION_MESSAGE);
+
     // Validate the entries and return cleaned copies in input order, so the
     // grouping never re-cleans or re-validates.
     const cleanedHeadings: Heading[] = [];
     const seenIds = new Set<string>();
-    for (const entry of headings) {
-        if (!isValidTargetId(entry.id))
-            throw new Error(
-                INVALID_HEADING_ID_MESSAGE_PREFIX + String(entry.id),
-            );
+    for (const candidate of headings) {
+        if (!isRecord(candidate))
+            throw new Error(INVALID_HEADING_RECORD_MESSAGE);
 
-        if (!isHeadingLevelValue(entry.level))
+        const id = candidate["id"];
+        const level = candidate["level"];
+        const title = candidate["title"];
+        if (!isValidTargetId(id))
+            throw new Error(INVALID_HEADING_ID_MESSAGE_PREFIX + String(id));
+
+        if (!isHeadingLevelValue(level))
             throw new Error(INVALID_HEADING_LEVEL_MESSAGE);
 
-        if (typeof entry.title !== "string")
+        if (typeof title !== "string")
             throw new Error(INVALID_HEADING_TITLE_MESSAGE);
 
-        if (seenIds.has(entry.id))
-            throw new Error(DUPLICATE_HEADING_ID_MESSAGE_PREFIX + entry.id);
+        if (seenIds.has(id))
+            throw new Error(DUPLICATE_HEADING_ID_MESSAGE_PREFIX + id);
 
-        const cleanedTitle = cleanHeadingTitle(entry.title);
         cleanedHeadings.push({
-            id: entry.id,
-            title: cleanedTitle,
-            level: entry.level,
+            id,
+            title: cleanHeadingTitle(title),
+            level,
         });
-        seenIds.add(entry.id);
+        seenIds.add(id);
     }
     return cleanedHeadings;
+}
+
+function isUnknownArray(candidate: unknown): candidate is readonly unknown[] {
+    return Array.isArray(candidate);
+}
+
+function isRecord(candidate: unknown): candidate is Record<string, unknown> {
+    return typeof candidate === "object" && candidate !== null;
 }
 
 export type TocTrackingSource =
@@ -296,10 +326,9 @@ export type TocTrackingSource =
  * lane discrimination precedes per-lane parsing. The `headings` lane parses
  * the entries and derives its id collection from them.
  */
-export function parseTrackingSource(props: {
-    targetIds?: readonly string[] | undefined;
-    headings?: readonly Heading[] | undefined;
-}): TocTrackingSource {
+export function parseTrackingSource(props: unknown): TocTrackingSource {
+    if (!isRecord(props)) throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
+
     const { targetIds, headings } = props;
     if (targetIds !== undefined && headings !== undefined)
         throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
@@ -328,16 +357,23 @@ export function parseTrackingSource(props: {
  * content is not consumer code.
  */
 export function discoverHeadings(
-    scope: Element,
+    scope: Element | null,
     options?: { levels?: readonly HeadingLevel[] },
 ): readonly Heading[] {
-    const selectedLevels = readDiscoveryLevels(options);
-    const selectedLevelSet = new Set<HeadingLevel>(selectedLevels);
+    const selectedLevelSet = new Set(readDiscoveryLevels(options));
+    if (scope === null) return [];
+
     const seenIds = new Set<string>();
     const headings: Heading[] = [];
 
     const headingElements = scope.querySelectorAll(HEADINGS_SELECTOR);
     for (const headingElement of headingElements) {
+        if (isInHiddenSubtree(headingElement)) {
+            const hiddenId = headingElement.getAttribute("id");
+            if (isValidTargetId(hiddenId)) seenIds.add(hiddenId);
+            continue;
+        }
+
         const level =
             HEADING_LEVEL_BY_TAG_NAME[headingElement.tagName.toUpperCase()];
         if (level === undefined) continue;
@@ -399,23 +435,51 @@ function readDiscoveryLevels(options?: {
 }
 
 function collectTitleText(element: Element, fragments: string[]): void {
-    // Excludes `hidden` and `aria-hidden="true"` subtrees, script/style, and comments.
     for (const child of element.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
             fragments.push(child.nodeValue ?? "");
             continue;
         }
-        if (!(child instanceof Element)) continue;
-        const isAttributeHidden =
-            child.hasAttribute("hidden") ||
-            child.getAttribute("aria-hidden") === "true";
+        if (!isElementNode(child)) continue;
         if (
-            isAttributeHidden ||
+            hasHiddenAttribute(child) ||
             TITLE_EXCLUDED_TAG_NAMES.has(child.tagName.toLowerCase())
         )
             continue;
         collectTitleText(child, fragments);
     }
+}
+
+function isElementNode(node: Node): node is Element {
+    return node.nodeType === Node.ELEMENT_NODE;
+}
+
+function isInHiddenSubtree(element: Element): boolean {
+    let currentNode: Node | null = element;
+    while (currentNode !== null) {
+        if (
+            isElementNode(currentNode) &&
+            hasHiddenAttribute(currentNode)
+        )
+            return true;
+
+        // A shadow root has no parent node, so continue from its host.
+        currentNode =
+            currentNode.parentNode ??
+            (isShadowRoot(currentNode) ? currentNode.host : null);
+    }
+    return false;
+}
+
+function isShadowRoot(node: Node): node is ShadowRoot {
+    return node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && "host" in node;
+}
+
+function hasHiddenAttribute(element: Element): boolean {
+    return (
+        element.hasAttribute("hidden") ||
+        element.getAttribute("aria-hidden") === "true"
+    );
 }
 
 /**
@@ -426,7 +490,6 @@ export function useTocHeadings(scope: Element | null): readonly Heading[] {
     const [headings, setHeadings] =
         React.useState<readonly Heading[]>(EMPTY_HEADINGS);
 
-    // Clear the snapshot when the scope detaches.
     useIsoLayoutEffect(() => {
         if (scope === null) {
             setHeadings(EMPTY_HEADINGS);
@@ -436,6 +499,28 @@ export function useTocHeadings(scope: Element | null): readonly Heading[] {
     }, [scope]);
 
     return headings;
+}
+
+function parseScrollElement(candidate: unknown): Element | null | undefined {
+    if (candidate === null || candidate === undefined) return candidate;
+    if (!isDomElement(candidate))
+        throw new Error(INVALID_SCROLL_ELEMENT_MESSAGE);
+    return candidate;
+}
+
+function isDomElement(candidate: unknown): candidate is Element {
+    if (typeof candidate !== "object" || candidate === null) return false;
+    // Check the element's own realm so Elements from iframes remain valid.
+    const ownerDocument =
+        "ownerDocument" in candidate ? candidate.ownerDocument : undefined;
+    if (!isRecord(ownerDocument)) return false;
+    const defaultView = ownerDocument["defaultView"];
+    if (!isRecord(defaultView)) return false;
+    const elementConstructor = defaultView["Element"];
+    return (
+        typeof elementConstructor === "function" &&
+        candidate instanceof elementConstructor
+    );
 }
 
 const TocRootContext = React.createContext<TocRootContextValue | undefined>(
@@ -454,27 +539,29 @@ function hasReachedBottom(
     );
 }
 
+interface UseTocTrackerReturnType {
+    currentId: string | null;
+    navElementRef: React.RefObject<HTMLElement | null>;
+}
+
 /**
  * Root-owned tracker: one geometry sample per scheduled update, change-only
  * notifications, and an initial `currentId` of `null` for SSR parity.
  */
-function useTocTracker(trackerProps: {
+function useTocTracker(props: {
     targetIds: readonly string[];
     scrollElement: Element | null | undefined;
     activationOffset: number;
     onCurrentChange: ((currentId: string | null) => void) | undefined;
     actionsRef: React.RefObject<TocActions | null> | undefined;
-}): {
-    currentId: string | null;
-    navElementRef: React.RefObject<HTMLElement | null>;
-} {
+}): UseTocTrackerReturnType {
     const {
         targetIds,
         scrollElement,
         activationOffset,
         onCurrentChange,
         actionsRef,
-    } = trackerProps;
+    } = props;
 
     const navElementRef = React.useRef<HTMLElement | null>(null);
     const currentIdRef = React.useRef<string | null>(null);
@@ -510,14 +597,10 @@ function useTocTracker(trackerProps: {
             activationOffset: committedOffsetPx,
         } = committedPropsRef.current;
         const navElement = navElementRef.current;
-        // A refresh() handle retained past unmount can schedule this after the ref clears.
-        if (navElement === null) return;
+
+        if (navElement === null || committedScrollElement === null) return;
 
         const doc = navElement.ownerDocument;
-
-        // Inactive tracking: refresh() may still run, so the request skips quietly.
-        if (committedScrollElement === null) return;
-
         const docElement = doc.documentElement;
         let surfaceElement: Element | null = null;
         let surfaceTopPx = 0;
@@ -612,6 +695,15 @@ function useTocTracker(trackerProps: {
     }, [actionsRef, scheduleMeasurement]);
 
     useIsoLayoutEffect(() => {
+        const navElement = navElementRef.current;
+        if (
+            navElement !== null &&
+            scrollElement !== null &&
+            scrollElement !== undefined &&
+            scrollElement.ownerDocument !== navElement.ownerDocument
+        )
+            throw new Error(SCROLL_ELEMENT_DOCUMENT_MESSAGE);
+
         // The committed props are the measurement input, so they update before any scheduled work.
         committedPropsRef.current = {
             targetIds,
@@ -630,12 +722,14 @@ function useTocTracker(trackerProps: {
         )
             publishCurrentId(null);
 
-        scheduleMeasurement();
-
-        const navElement = navElementRef.current;
-        // A custom renderer that drops the ref cannot provide the tracking element.
-        if (navElement === null) return;
+        // Without the rendered nav, there is no document or surface to measure.
+        if (navElement === null) {
+            publishCurrentId(null);
+            return;
+        }
         const doc = navElement.ownerDocument;
+
+        scheduleMeasurement();
 
         // The root element tracks like an omitted `scrollElement`: root-scroller
         // events target the Document, and its bounding-rect top is the document origin.
@@ -753,7 +847,7 @@ export function TocRoot(componentProps: TocRootProps) {
     );
     const tracker = useTocTracker({
         targetIds: trackedSource.targetIds,
-        scrollElement,
+        scrollElement: parseScrollElement(scrollElement),
         activationOffset: parseActivationOffset(activationOffset),
         onCurrentChange,
         actionsRef,
@@ -761,6 +855,7 @@ export function TocRoot(componentProps: TocRootProps) {
 
     const trackedHeadings =
         trackedSource.lane === "headings" ? trackedSource.headings : null;
+
     const contextValue: TocRootContextValue = React.useMemo(
         () => ({
             targetIds: trackedSource.targetIds,
@@ -809,7 +904,6 @@ export interface TocListProps extends TocCompositionProps<
 
 /** A flat ordered list of heading entries. */
 export function TocList(componentProps: TocListProps) {
-    const context = React.useContext(TocRootContext);
     const {
         className,
         style,
@@ -819,7 +913,7 @@ export function TocList(componentProps: TocListProps) {
         ...elementProps
     } = componentProps;
 
-    const headings = context === undefined ? null : context.headings;
+    const headings = React.useContext(TocRootContext)?.headings ?? null;
     const children =
         typeof childrenProp === "function"
             ? renderHeadingEntries(childrenProp, headings)
@@ -920,7 +1014,10 @@ export function TocLink(componentProps: TocLinkProps) {
 }
 
 export interface TocValueProps {
-    children?: ((value: string | null) => React.ReactNode) | undefined;
+    children?:
+        | React.ReactNode
+        | ((value: string | null) => React.ReactNode)
+        | undefined;
 }
 
 /**
@@ -932,5 +1029,6 @@ export function TocValue({ children }: TocValueProps) {
     if (context === undefined) throw new Error(VALUE_OUTSIDE_ROOT_MESSAGE);
 
     const value = selectActiveValue(context.headings, context.currentId);
-    return typeof children === "function" ? children(value) : value;
+    if (typeof children === "function") return children(value);
+    return children == null ? value : children;
 }
