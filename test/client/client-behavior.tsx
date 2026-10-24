@@ -151,6 +151,26 @@ async function mount(
     };
 }
 
+class TestErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { errorMessage: string | null }
+> {
+    override state: { errorMessage: string | null } = { errorMessage: null };
+
+    static getDerivedStateFromError(error: unknown) {
+        return {
+            errorMessage:
+                error instanceof Error ? error.message : "Unknown error",
+        };
+    }
+
+    override render() {
+        if (this.state.errorMessage !== null)
+            return <span>{this.state.errorMessage}</span>;
+        return this.props.children;
+    }
+}
+
 // The tracker measures in an animation frame, so a test waits for one.
 async function flushFrames() {
     await act(async () => {
@@ -518,6 +538,10 @@ describe("current change notification", () => {
 });
 
 describe("heading discovery", () => {
+    test("returns an empty array for a null scope", () => {
+        expect(discoverHeadings(null)).toEqual([]);
+    });
+
     test("leaves out a heading that cannot be represented and reports it", async () => {
         const scope = win.document.createElement("article");
         const headings = [
@@ -561,9 +585,89 @@ describe("heading discovery", () => {
             ]);
         });
     });
+
+    test("does not emit a visible heading when a hidden heading owns its id", async () => {
+        const scope = win.document.createElement("article");
+        const hiddenHeading = win.document.createElement("h2");
+        hiddenHeading.id = "shared";
+        hiddenHeading.textContent = "Hidden";
+        hiddenHeading.hidden = true;
+        scope.append(hiddenHeading);
+
+        const visibleHeading = win.document.createElement("h2");
+        visibleHeading.id = "shared";
+        visibleHeading.textContent = "Visible";
+        scope.append(visibleHeading);
+
+        const warnings = await captureWarnings(() => {
+            expect(discoverHeadings(scope as unknown as Element)).toEqual([]);
+        });
+
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain("already belongs");
+    });
+
+    test("excludes headings inside an aria-hidden shadow host", async () => {
+        const host = win.document.createElement("div");
+        host.setAttribute("aria-hidden", "true");
+        const shadowRoot = host.attachShadow({ mode: "open" });
+        const scope = win.document.createElement("article");
+        const heading = win.document.createElement("h2");
+        heading.id = "hidden-shadow-heading";
+        heading.textContent = "Hidden";
+        scope.append(heading);
+        shadowRoot.append(scope);
+        win.document.body.append(host);
+
+        try {
+            const warnings = await captureWarnings(() => {
+                expect(discoverHeadings(scope as unknown as Element)).toEqual(
+                    [],
+                );
+            });
+
+            expect(warnings).toHaveLength(0);
+        } finally {
+            host.remove();
+        }
+    });
 });
 
 describe("element scroller", () => {
+    test("rejects a scroller from a different document", async () => {
+        const otherWindow = new Window();
+        const scroller = otherWindow.document.createElement("div");
+        const consoleErrors: unknown[][] = [];
+        const originalConsoleError = console.error;
+        console.error = (...args: unknown[]) => {
+            consoleErrors.push(args);
+        };
+
+        try {
+            const mounted = await mount(
+                <TestErrorBoundary>
+                    <TocRoot
+                        targetIds={[]}
+                        scrollElement={scroller as unknown as Element}
+                    />
+                </TestErrorBoundary>,
+            );
+            try {
+                expect(mounted.container.textContent).toContain(
+                    "same document as TocRoot",
+                );
+                expect(consoleErrors.flat().map(String).join("\n")).toContain(
+                    "same document as TocRoot",
+                );
+            } finally {
+                await mounted.unmount();
+            }
+        } finally {
+            console.error = originalConsoleError;
+            otherWindow.close();
+        }
+    });
+
     test("leaves out a target outside the scroller and keeps tracking the others", async () => {
         const scroller = win.document.createElement("div");
         Object.defineProperty(scroller, "clientHeight", { value: 400 });
@@ -620,6 +724,36 @@ describe("TocValue", () => {
         const { container } = await mount(
             <TocRoot headings={[{ id: "intro", title: "Intro", level: 2 }]}>
                 <TocValue />
+            </TocRoot>,
+        );
+        await flushFrames();
+
+        expect(container.textContent).toBe("Intro");
+    });
+
+    test("renders a static child instead of the current value", async () => {
+        addHeadings(HEADINGS);
+        headingTops.set("intro", 0);
+        headingTops.set("scope", 400);
+
+        const { container } = await mount(
+            <TocRoot headings={[{ id: "intro", title: "Intro", level: 2 }]}>
+                <TocValue>Custom value</TocValue>
+            </TocRoot>,
+        );
+        await flushFrames();
+
+        expect(container.textContent).toBe("Custom value");
+    });
+
+    test("uses the current value when children is null", async () => {
+        addHeadings(HEADINGS);
+        headingTops.set("intro", 0);
+        headingTops.set("scope", 400);
+
+        const { container } = await mount(
+            <TocRoot headings={[{ id: "intro", title: "Intro", level: 2 }]}>
+                <TocValue>{null}</TocValue>
             </TocRoot>,
         );
         await flushFrames();
