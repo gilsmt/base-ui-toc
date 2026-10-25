@@ -7,9 +7,6 @@ import { Window } from "happy-dom";
 // at module scope, so they cannot share a process. This file runs on its own
 // (see the `test:client` script); the server-side tests run in the default
 // `bun test` process.
-
-// The client-side behavior of the parts needs a DOM. happy-dom has no layout,
-// so the geometry is faked: every target sits at the top that the test gives it.
 const win = new Window({ url: "http://localhost/" });
 
 const globals = globalThis as unknown as Record<string, unknown>;
@@ -262,7 +259,13 @@ describe("collection identity", () => {
         addHeadings(HEADINGS);
 
         // The collection stays stable, so only the added lane changes.
-        function App({ ids, entries }: { ids?: readonly string[]; entries?: readonly { id: string; title: string; level: 2 }[] }) {
+        function App({
+            ids,
+            entries,
+        }: {
+            ids?: readonly string[];
+            entries?: readonly { id: string; title: string; level: 2 }[];
+        }) {
             return (
                 <TocRoot targetIds={ids} headings={entries}>
                     <TocList>
@@ -359,7 +362,8 @@ describe("current change notification", () => {
         headingTops.set("scope", 400);
 
         const container = win.document.createElement("div");
-        const observed: { id: string | null; ariaCurrent: string | null }[] = [];
+        const observed: { id: string | null; ariaCurrent: string | null }[] =
+            [];
 
         const { unmount } = await mount(
             <TocRoot
@@ -467,9 +471,9 @@ describe("current change notification", () => {
         headingTops.set("scope", 800);
 
         const observed: (string | null)[] = [];
-        const actionsRef = React.createRef<
-            { refresh(): void } | null
-        >() as React.RefObject<{ refresh(): void } | null>;
+        const actionsRef = React.createRef<{
+            refresh(): void;
+        } | null>() as React.RefObject<{ refresh(): void } | null>;
 
         await mount(
             <TocRoot
@@ -710,7 +714,9 @@ describe("element scroller", () => {
             await flushFrames();
         });
 
-        expect(warnings.join("\n")).toContain("outside its configured scroller");
+        expect(warnings.join("\n")).toContain(
+            "outside its configured scroller",
+        );
         expect(observed).toEqual(["inside"]);
     });
 });
