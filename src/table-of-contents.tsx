@@ -128,14 +128,14 @@ interface HeadingNodeDraft extends Heading {
     children: HeadingNodeDraft[];
 }
 
-export interface TocTargetGeometry {
+export interface TocTargetPosition {
     id: string;
-    /** Pixels from the surface top edge down to the target's top edge; `null` when the target is unavailable. */
-    headroomPx: number | null;
+    /** Distance in CSS pixels from the surface top to the target top; null when unavailable. */
+    distanceFromSurfaceTopPx: number | null;
 }
 
-export interface TocGeometrySample {
-    targets: readonly TocTargetGeometry[];
+export interface TocScrollSnapshot {
+    targetPositions: readonly TocTargetPosition[];
     activationOffsetPx: number;
     hasSurfaceBottomReached: boolean;
 }
@@ -207,18 +207,18 @@ function parseActivationOffset(candidate: unknown): number {
 }
 
 export function selectCurrentTargetId(
-    sample: TocGeometrySample,
+    snapshot: TocScrollSnapshot,
 ): string | null {
     let lastCrossedId: string | null = null;
     let lastAvailableId: string | null = null;
-    for (const target of sample.targets) {
-        if (target.headroomPx === null) continue;
-        lastAvailableId = target.id;
-        if (target.headroomPx <= sample.activationOffsetPx)
-            lastCrossedId = target.id;
+    for (const position of snapshot.targetPositions) {
+        if (position.distanceFromSurfaceTopPx === null) continue;
+        lastAvailableId = position.id;
+        if (position.distanceFromSurfaceTopPx <= snapshot.activationOffsetPx)
+            lastCrossedId = position.id;
     }
     if (lastCrossedId !== null) return lastCrossedId;
-    if (sample.hasSurfaceBottomReached) return lastAvailableId;
+    if (snapshot.hasSurfaceBottomReached) return lastAvailableId;
     return null;
 }
 
@@ -309,8 +309,8 @@ function isUnknownArray(candidate: unknown): candidate is readonly unknown[] {
     return Array.isArray(candidate);
 }
 
-function isRecord(candidate: unknown): candidate is Record<string, unknown> {
-    return typeof candidate === "object" && candidate !== null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
 }
 
 export type TocTrackingSource =
@@ -457,10 +457,7 @@ function isElementNode(node: Node): node is Element {
 function isInHiddenSubtree(element: Element): boolean {
     let currentNode: Node | null = element;
     while (currentNode !== null) {
-        if (
-            isElementNode(currentNode) &&
-            hasHiddenAttribute(currentNode)
-        )
+        if (isElementNode(currentNode) && hasHiddenAttribute(currentNode))
             return true;
 
         // A shadow root has no parent node, so continue from its host.
@@ -539,15 +536,99 @@ function hasReachedBottom(
     );
 }
 
+interface TocScrollSnapshotReadOptions {
+    doc: Document;
+    targetIds: readonly string[];
+    scrollElement: Element | null | undefined;
+    activationOffsetPx: number;
+}
+
+function readTocScrollSnapshot({
+    doc,
+    targetIds,
+    scrollElement,
+    activationOffsetPx,
+}: TocScrollSnapshotReadOptions): TocScrollSnapshot | null {
+    if (scrollElement === null) return null;
+
+    const docElement = doc.documentElement;
+    let surfaceElement: Element | null = null;
+    let surfaceTopPx = 0;
+    let hasSurfaceBottomReached = false;
+
+    if (scrollElement === undefined || scrollElement === docElement) {
+        const view = doc.defaultView;
+        if (view === null) return null;
+
+        hasSurfaceBottomReached = hasReachedBottom(
+            docElement.scrollHeight,
+            docElement.clientHeight,
+            view.scrollY,
+        );
+    } else {
+        if (scrollElement.clientHeight <= 0) return null;
+
+        surfaceElement = scrollElement;
+        // The surface top edge is the client-area edge, so clientTop adds the border-top width in px.
+        surfaceTopPx =
+            scrollElement.getBoundingClientRect().top + scrollElement.clientTop;
+        hasSurfaceBottomReached = hasReachedBottom(
+            scrollElement.scrollHeight,
+            scrollElement.clientHeight,
+            scrollElement.scrollTop,
+        );
+    }
+
+    const targetPositions: TocTargetPosition[] = [];
+    for (const targetId of targetIds) {
+        const targetElement = doc.getElementById(targetId);
+        if (targetElement === null) {
+            targetPositions.push({
+                id: targetId,
+                distanceFromSurfaceTopPx: null,
+            });
+            continue;
+        }
+        // Ownership: a target outside its scroller cannot be measured
+        // against it, so it stays unavailable; contains() is inclusive, so
+        // the scroller itself is excluded.
+        if (surfaceElement !== null) {
+            const isTargetOwnedByScroller =
+                targetElement !== surfaceElement &&
+                surfaceElement.contains(targetElement);
+            if (!isTargetOwnedByScroller) {
+                warn(
+                    `${OWNERSHIP_WARNING_MESSAGE} Skipped the target "${targetId}".`,
+                );
+                targetPositions.push({
+                    id: targetId,
+                    distanceFromSurfaceTopPx: null,
+                });
+                continue;
+            }
+        }
+        if (targetElement.getClientRects().length === 0) {
+            targetPositions.push({
+                id: targetId,
+                distanceFromSurfaceTopPx: null,
+            });
+            continue;
+        }
+        targetPositions.push({
+            id: targetId,
+            distanceFromSurfaceTopPx:
+                targetElement.getBoundingClientRect().top - surfaceTopPx,
+        });
+    }
+
+    return { targetPositions, activationOffsetPx, hasSurfaceBottomReached };
+}
+
 interface UseTocTrackerReturnType {
     currentId: string | null;
     navElementRef: React.RefObject<HTMLElement | null>;
 }
 
-/**
- * Root-owned tracker: one geometry sample per scheduled update, change-only
- * notifications, and an initial `currentId` of `null` for SSR parity.
- */
 function useTocTracker(props: {
     targetIds: readonly string[];
     scrollElement: Element | null | undefined;
@@ -591,93 +672,22 @@ function useTocTracker(props: {
     }, [currentId, notifyCurrentIdChange]);
 
     const measureAndPublish = React.useCallback(() => {
-        const {
-            targetIds: committedTargetIds,
-            scrollElement: committedScrollElement,
-            activationOffset: committedOffsetPx,
-        } = committedPropsRef.current;
         const navElement = navElementRef.current;
+        if (navElement === null) return;
 
-        if (navElement === null || committedScrollElement === null) return;
-
-        const doc = navElement.ownerDocument;
-        const docElement = doc.documentElement;
-        let surfaceElement: Element | null = null;
-        let surfaceTopPx = 0;
-        let hasSurfaceBottomReached = false;
-
-        if (
-            committedScrollElement === undefined ||
-            committedScrollElement === docElement
-        ) {
-            const view = doc.defaultView;
-            // A document without a window cannot be measured; publish null instead of keeping a stale value.
-            if (view === null) {
-                publishCurrentId(null);
-                return;
-            }
-            hasSurfaceBottomReached = hasReachedBottom(
-                docElement.scrollHeight,
-                docElement.clientHeight,
-                view.scrollY,
-            );
-        } else {
-            if (committedScrollElement.clientHeight <= 0) {
-                publishCurrentId(null);
-                return;
-            }
-            surfaceElement = committedScrollElement;
-            // The surface top edge is the client-area edge, so clientTop adds the border-top width in px.
-            surfaceTopPx =
-                committedScrollElement.getBoundingClientRect().top +
-                committedScrollElement.clientTop;
-            hasSurfaceBottomReached = hasReachedBottom(
-                committedScrollElement.scrollHeight,
-                committedScrollElement.clientHeight,
-                committedScrollElement.scrollTop,
-            );
+        const committed = committedPropsRef.current;
+        const snapshot = readTocScrollSnapshot({
+            doc: navElement.ownerDocument,
+            targetIds: committed.targetIds,
+            scrollElement: committed.scrollElement,
+            activationOffsetPx: committed.activationOffset,
+        });
+        if (snapshot === null) {
+            // An unavailable surface cannot be measured, so clear any stale current target.
+            publishCurrentId(null);
+            return;
         }
-
-        const targetsGeometry: TocTargetGeometry[] = [];
-        for (const targetId of committedTargetIds) {
-            const targetElement = doc.getElementById(targetId);
-            if (targetElement === null) {
-                targetsGeometry.push({ id: targetId, headroomPx: null });
-                continue;
-            }
-            // Ownership: a target outside its scroller cannot be measured
-            // against it, so it stays unavailable; contains() is inclusive, so
-            // the scroller itself is excluded.
-            if (surfaceElement !== null) {
-                const isTargetOwnedByScroller =
-                    targetElement !== surfaceElement &&
-                    surfaceElement.contains(targetElement);
-                if (!isTargetOwnedByScroller) {
-                    warn(
-                        `${OWNERSHIP_WARNING_MESSAGE} Skipped the target "${targetId}".`,
-                    );
-                    targetsGeometry.push({ id: targetId, headroomPx: null });
-                    continue;
-                }
-            }
-            if (targetElement.getClientRects().length === 0) {
-                targetsGeometry.push({ id: targetId, headroomPx: null });
-                continue;
-            }
-            targetsGeometry.push({
-                id: targetId,
-                headroomPx:
-                    targetElement.getBoundingClientRect().top - surfaceTopPx,
-            });
-        }
-
-        publishCurrentId(
-            selectCurrentTargetId({
-                targets: targetsGeometry,
-                activationOffsetPx: committedOffsetPx,
-                hasSurfaceBottomReached,
-            }),
-        );
+        publishCurrentId(selectCurrentTargetId(snapshot));
     }, [publishCurrentId]);
 
     const scheduleMeasurement = React.useCallback(() => {

@@ -11,8 +11,8 @@ import {
   selectActiveValue,
   selectCurrentTargetId,
   useTocHeadings,
-  type TocGeometrySample,
-  type TocTargetGeometry,
+  type TocScrollSnapshot,
+  type TocTargetPosition,
   type Heading,
   type HeadingNode,
   type HeadingLevel,
@@ -113,53 +113,60 @@ describe("isValidActivationOffset", () => {
   });
 });
 
-const geometry = (id: string, headroomPx: number | null): TocTargetGeometry => ({ id, headroomPx });
+const position = (
+  id: string,
+  distanceFromSurfaceTopPx: number | null,
+): TocTargetPosition => ({ id, distanceFromSurfaceTopPx });
 
-const sample = (
-  targets: readonly TocTargetGeometry[],
+const snapshot = (
+  targetPositions: readonly TocTargetPosition[],
   activationOffsetPx: number,
   hasSurfaceBottomReached = false,
-): TocGeometrySample => ({ targets, activationOffsetPx, hasSurfaceBottomReached });
+): TocScrollSnapshot => ({
+  targetPositions,
+  activationOffsetPx,
+  hasSurfaceBottomReached,
+});
 
 describe("selectCurrentTargetId", () => {
   test("selects the last crossed target in configured order", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 120), geometry("b", 80), geometry("c", 30)], 50))).toBe("c");
+    expect(selectCurrentTargetId(snapshot([position("a", 120), position("b", 80), position("c", 30)], 50))).toBe("c");
   });
 
   test("reports null before the first crossing", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 100), geometry("b", 80)], 20))).toBe(null);
-    expect(selectCurrentTargetId(sample([], 0))).toBe(null);
+    expect(selectCurrentTargetId(snapshot([position("a", 100), position("b", 80)], 20))).toBe(null);
+    expect(selectCurrentTargetId(snapshot([], 0))).toBe(null);
   });
 
-  test("treats a headroom equal to the offset as crossed; equal tops pick the later entry", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 0)], 0))).toBe("a");
-    expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", 10)], 10))).toBe("b");
+  test("treats a target position equal to the offset as crossed; equal tops pick the later entry", () => {
+    expect(selectCurrentTargetId(snapshot([position("a", 0)], 0))).toBe("a");
+    expect(selectCurrentTargetId(snapshot([position("a", 10), position("b", 10)], 10))).toBe("b");
   });
 
-  test("follows configured order on non-monotone geometry", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", 200), geometry("c", 20), geometry("d", 5)], 10))).toBe("d");
-    expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", 5), geometry("c", 200)], 20))).toBe("b");
+  test("follows configured order on non-monotone target positions", () => {
+    expect(selectCurrentTargetId(snapshot([position("a", 10), position("b", 200), position("c", 20), position("d", 5)], 10))).toBe("d");
+    expect(selectCurrentTargetId(snapshot([position("a", 10), position("b", 5), position("c", 200)], 20))).toBe("b");
   });
 
   test("skips unavailable targets for both crossing and the bottom exception", () => {
-    expect(selectCurrentTargetId(sample([geometry("b", null), geometry("c", 200)], 20, false))).toBe(null);
-    expect(selectCurrentTargetId(sample([geometry("b", null), geometry("c", 200)], 20, true))).toBe("c");
-    expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", null), geometry("c", 200)], 20, true))).toBe("a");
+    expect(selectCurrentTargetId(snapshot([position("b", null), position("c", 200)], 20, false))).toBe(null);
+    expect(selectCurrentTargetId(snapshot([position("b", null), position("c", 200)], 20, true))).toBe("c");
+    expect(selectCurrentTargetId(snapshot([position("a", 10), position("b", null), position("c", 200)], 20, true))).toBe("a");
   });
 
   test("applies the bottom exception only when no target crossed and the bottom is reached", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 100), geometry("b", 80)], 20, true))).toBe("b");
-    expect(selectCurrentTargetId(sample([geometry("a", 100), geometry("b", 80)], 20, false))).toBe(null);
-    expect(selectCurrentTargetId(sample([geometry("a", 10), geometry("b", 80)], 20, true))).toBe("a");
+    expect(selectCurrentTargetId(snapshot([position("a", 100), position("b", 80)], 20, true))).toBe("b");
+    expect(selectCurrentTargetId(snapshot([position("a", 100), position("b", 80)], 20, false))).toBe(null);
+    expect(selectCurrentTargetId(snapshot([position("a", 10), position("b", 80)], 20, true))).toBe("a");
   });
 
   test("reports null when the bottom is reached but no target is available", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", null), geometry("b", null)], 0, true))).toBe(null);
+    expect(selectCurrentTargetId(snapshot([position("a", null), position("b", null)], 0, true))).toBe(null);
   });
 
-  test("selects a target whose headroom is at/below a large offset, and reports null otherwise", () => {
-    expect(selectCurrentTargetId(sample([geometry("a", 100)], 500))).toBe("a");
-    expect(selectCurrentTargetId(sample([geometry("a", 100)], 50))).toBe(null);
+  test("selects a target whose distance is at/below a large offset, and reports null otherwise", () => {
+    expect(selectCurrentTargetId(snapshot([position("a", 100)], 500))).toBe("a");
+    expect(selectCurrentTargetId(snapshot([position("a", 100)], 50))).toBe(null);
   });
 });
 
