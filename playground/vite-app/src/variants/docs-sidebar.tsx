@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
   TocRoot,
+  TocTitle,
+  TocIndicator,
   TocList,
   TocItem,
   TocLink,
@@ -14,6 +16,8 @@ import "./docs-sidebar.css";
 const FILLER_PARAGRAPH =
   "The section body holds filler text so the page grows long enough to scroll through several headings in one read.";
 
+const TOC_TITLE_ID = "pg-docs-toc-title";
+
 export function DocsSidebar() {
   const [article, setArticle] = React.useState<HTMLElement | null>(null);
 
@@ -24,7 +28,15 @@ export function DocsSidebar() {
   return (
     <div className="pg-docs">
       <aside className="pg-docs-sidebar">
-        <TocRoot headings={headings} className="pg-toc pg-docs-nav">
+        <TocRoot
+          headings={headings}
+          aria-labelledby={TOC_TITLE_ID}
+          className="pg-toc pg-docs-nav"
+        >
+          <TocTitle id={TOC_TITLE_ID} className="pg-docs-title">
+            On this page
+          </TocTitle>
+          <TocIndicator className="pg-docs-indicator" />
           {/* The text part renders the active item's value and no element. */}
           <p className="pg-toc-current">
             Reading:{" "}

@@ -28,6 +28,7 @@ setGlobal("ResizeObserver", win.ResizeObserver);
 setGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const headingTops = new Map<string, number>();
+const elementHeights = new Map<string, number>();
 
 // happy-dom has its own DOM types, so the prototype is patched through a
 // loosely typed view of it.
@@ -41,13 +42,14 @@ elementPrototype["getBoundingClientRect"] = function getBoundingClientRect(
 ) {
     const id = this.getAttribute("id");
     const top = id === null ? 0 : (headingTops.get(id) ?? 0);
+    const height = id === null ? 24 : (elementHeights.get(id) ?? 24);
     return {
         top,
-        bottom: top + 24,
+        bottom: top + height,
         left: 0,
         right: 0,
         width: 0,
-        height: 24,
+        height,
         x: 0,
         y: top,
         toJSON: () => ({}),
@@ -81,9 +83,90 @@ afterAll(() => {
     win.close();
 });
 
+class TestResizeObserver implements ResizeObserver {
+    static instances: TestResizeObserver[] = [];
+
+    readonly observedTargets = new Set<Element>();
+    observeCalls = 0;
+    disconnected = false;
+    private readonly callback: ResizeObserverCallback;
+
+    constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+        TestResizeObserver.instances.push(this);
+    }
+
+    observe(target: Element) {
+        this.observeCalls += 1;
+        this.observedTargets.add(target);
+    }
+
+    hasObservedTargetWithId(id: string) {
+        for (const target of this.observedTargets) {
+            if (target.id === id) return true;
+        }
+        return false;
+    }
+
+    unobserve(target: Element) {
+        this.observedTargets.delete(target);
+    }
+
+    disconnect() {
+        this.disconnected = true;
+        this.observedTargets.clear();
+    }
+
+    notifyTargetWithId(id: string) {
+        if (this.disconnected) return;
+
+        let target: Element | null = null;
+        for (const observedTarget of this.observedTargets) {
+            if (observedTarget.id === id) {
+                target = observedTarget;
+                break;
+            }
+        }
+        if (target === null) return;
+
+        const contentRect = target.getBoundingClientRect();
+        const size = {
+            inlineSize: contentRect.width,
+            blockSize: contentRect.height,
+        };
+        const entry: ResizeObserverEntry = {
+            target,
+            contentRect,
+            borderBoxSize: [size],
+            contentBoxSize: [size],
+            devicePixelContentBoxSize: [size],
+        };
+        this.callback([entry], this);
+    }
+}
+
+async function withTestResizeObserver(run: () => Promise<void>) {
+    const original = globals["ResizeObserver"];
+    TestResizeObserver.instances = [];
+    globals["ResizeObserver"] = TestResizeObserver;
+    try {
+        await run();
+    } finally {
+        globals["ResizeObserver"] = original;
+    }
+}
+
 const { act } = await import("react");
-const { TocItem, TocLink, TocList, TocRoot, TocValue, discoverHeadings } =
-    await import("../../src/table-of-contents");
+const {
+    TocIndicator,
+    TocItem,
+    TocLink,
+    TocList,
+    TocRoot,
+    TocTitle,
+    TocValue,
+    discoverHeadings,
+} = await import("../../src/table-of-contents");
 
 // The reports are logged once per message, so each test starts with a clean slate.
 const { reset } = await import("@base-ui/utils/createLogOnce");
@@ -122,6 +205,15 @@ function addHeadings(ids: readonly string[]) {
 }
 
 type HappyElement = InstanceType<typeof win.HTMLElement>;
+
+function queryHTMLElement(
+    container: HappyElement,
+    selector: string,
+): HappyElement | null {
+    const element = container.querySelector(selector);
+    if (element instanceof win.HTMLElement) return element;
+    return null;
+}
 
 async function mount(
     node: React.ReactNode,
@@ -718,6 +810,183 @@ describe("element scroller", () => {
             "outside its configured scroller",
         );
         expect(observed).toEqual(["inside"]);
+    });
+});
+
+describe("TocIndicator", () => {
+    test("shows the current row and keeps its observer across target changes", async () => {
+        await withTestResizeObserver(async () => {
+            addHeadings(HEADINGS);
+            headingTops.set("intro", 0);
+            headingTops.set("scope", 400);
+            headingTops.set("indicator-nav", 10);
+            headingTops.set("indicator-row-intro", 50);
+            headingTops.set("indicator-row-scope", 80);
+
+            function App() {
+                return (
+                    <TocRoot id="indicator-nav" targetIds={STABLE_IDS}>
+                        <TocTitle id="indicator-title">Contents</TocTitle>
+                        <TocIndicator className="toc-indicator" />
+                        <TocList>
+                            <TocItem id="indicator-row-intro">
+                                <TocLink targetId="intro">Intro</TocLink>
+                            </TocItem>
+                            <TocItem id="indicator-row-scope">
+                                <TocLink targetId="scope">Scope</TocLink>
+                            </TocItem>
+                        </TocList>
+                    </TocRoot>
+                );
+            }
+
+            const mounted = await mount(<App />);
+            let observer: TestResizeObserver | undefined;
+            try {
+                await flushFrames();
+
+                const indicator = queryHTMLElement(
+                    mounted.container,
+                    ".toc-indicator",
+                );
+                expect(indicator?.hasAttribute("hidden")).toBe(false);
+                expect(indicator?.getAttribute("aria-hidden")).toBe("true");
+                expect(indicator?.hasAttribute("data-visible")).toBe(true);
+                expect(indicator?.style.top).toBe("40px");
+
+                observer = TestResizeObserver.instances[0];
+                expect(observer).toBeDefined();
+                if (observer === undefined) throw new Error("Observer missing.");
+                const initialObserveCalls = observer.observeCalls;
+
+                headingTops.set("scope", -10);
+                scroll();
+                await flushFrames();
+
+                expect(indicator?.style.top).toBe("70px");
+                expect(TestResizeObserver.instances).toHaveLength(1);
+                expect(observer.observeCalls).toBe(initialObserveCalls);
+            } finally {
+                await mounted.unmount();
+            }
+
+            expect(observer?.disconnected).toBe(true);
+        });
+    });
+
+    test("remeasures when a direct child resizes and shifts the list", async () => {
+        await withTestResizeObserver(async () => {
+            addHeadings(STABLE_ONE_ID);
+            headingTops.set("intro", 0);
+            headingTops.set("indicator-resize-nav", 10);
+            headingTops.set("indicator-resize-row", 50);
+            elementHeights.set("indicator-resize-nav", 200);
+            elementHeights.set("indicator-resize-title", 24);
+
+            const mounted = await mount(
+                <TocRoot
+                    id="indicator-resize-nav"
+                    targetIds={STABLE_ONE_ID}
+                    style={{ height: 200, overflowY: "auto" }}
+                >
+                    <TocTitle id="indicator-resize-title">
+                        A title that wraps after a font loads
+                    </TocTitle>
+                    <TocIndicator className="toc-indicator" />
+                    <TocList>
+                        <TocItem id="indicator-resize-row">
+                            <TocLink targetId="intro">Intro</TocLink>
+                        </TocItem>
+                    </TocList>
+                </TocRoot>,
+            );
+
+            try {
+                await flushFrames();
+
+                const nav = queryHTMLElement(
+                    mounted.container,
+                    "#indicator-resize-nav",
+                );
+                const title = queryHTMLElement(
+                    mounted.container,
+                    "#indicator-resize-title",
+                );
+                const row = queryHTMLElement(
+                    mounted.container,
+                    "#indicator-resize-row",
+                );
+                const indicator = queryHTMLElement(
+                    mounted.container,
+                    ".toc-indicator",
+                );
+                const observer = TestResizeObserver.instances[0];
+                if (
+                    nav === null ||
+                    title === null ||
+                    row === null ||
+                    indicator === null ||
+                    observer === undefined
+                )
+                    throw new Error("Indicator resize targets missing.");
+
+                expect(nav.getBoundingClientRect().height).toBe(200);
+                expect(indicator.style.top).toBe("40px");
+                expect(
+                    observer.hasObservedTargetWithId("indicator-resize-title"),
+                ).toBe(true);
+
+                elementHeights.set("indicator-resize-title", 48);
+                headingTops.set("indicator-resize-row", 74);
+                observer.notifyTargetWithId("indicator-resize-title");
+                await flushFrames();
+
+                expect(nav.getBoundingClientRect().height).toBe(200);
+                expect(row.getBoundingClientRect().height).toBe(24);
+                expect(indicator.style.top).toBe("64px");
+            } finally {
+                await mounted.unmount();
+            }
+        });
+    });
+
+    test("follows scrolling inside the navigation", async () => {
+        await withTestResizeObserver(async () => {
+            addHeadings(STABLE_ONE_ID);
+            headingTops.set("intro", 0);
+            headingTops.set("indicator-scroll-nav", 10);
+            headingTops.set("indicator-scroll-row", 50);
+
+            const mounted = await mount(
+                <TocRoot id="indicator-scroll-nav" targetIds={STABLE_ONE_ID}>
+                    <TocIndicator className="toc-indicator" />
+                    <TocList style={{ maxHeight: 40, overflow: "auto" }}>
+                        <TocItem id="indicator-scroll-row">
+                            <TocLink targetId="intro">Intro</TocLink>
+                        </TocItem>
+                    </TocList>
+                </TocRoot>,
+            );
+
+            try {
+                await flushFrames();
+                const list = queryHTMLElement(mounted.container, "ol");
+                const indicator = queryHTMLElement(
+                    mounted.container,
+                    ".toc-indicator",
+                );
+                expect(indicator?.style.top).toBe("40px");
+
+                headingTops.set("indicator-scroll-row", 38);
+                if (list === null) throw new Error("TOC list missing.");
+                list.dispatchEvent(new win.Event("scroll"));
+                await flushFrames();
+
+                expect(indicator?.style.top).toBe("28px");
+            } finally {
+                await mounted.unmount();
+            }
+        });
     });
 });
 

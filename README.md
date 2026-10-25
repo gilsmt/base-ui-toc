@@ -31,6 +31,8 @@ Import the parts, and assemble them together:
 ```tsx
 import {
     TocRoot,
+    TocTitle,
+    TocIndicator,
     TocList,
     TocItem,
     TocLink,
@@ -42,8 +44,16 @@ import {
 
 const headings = useTocHeadings(article);
 
+const TOC_TITLE_ID = "page-toc-title";
+
 return (
-    <TocRoot headings={headings}>
+    <TocRoot
+        headings={headings}
+        aria-labelledby={TOC_TITLE_ID}
+        className="toc-root"
+    >
+        <TocTitle id={TOC_TITLE_ID}>On this page</TocTitle>
+        <TocIndicator className="toc-indicator" />
         <TocList>
             {(entry) => (
                 <TocItem style={{ paddingInlineStart: (entry.level - 2) * 12 }}>
@@ -104,13 +114,38 @@ Keep the collection stable across renders: hoist it, or memoize it. The tracker 
 
 Default rendering:
 
-| Part       | Element | Default semantics                                                                  |
-| :--------- | :------ | :--------------------------------------------------------------------------------- |
-| `TocRoot`  | `<nav>` | `aria-label="Table of contents"` (override with `aria-label` or `aria-labelledby`) |
-| `TocList`  | `<ol>`  | —                                                                                  |
-| `TocItem`  | `<li>`  | —                                                                                  |
-| `TocLink`  | `<a>`   | `aria-current="location"` when current                                             |
-| `TocValue` | none    | the active item's value as text                                                    |
+| Part            | Element  | Default semantics                                                                   |
+| :-------------- | :------- | :---------------------------------------------------------------------------------- |
+| `TocRoot`       | `<nav>`  | `aria-label="Table of contents"` (override with `aria-label` or `aria-labelledby`) |
+| `TocTitle`      | `<h2>`   | visible heading; use its `id` with root `aria-labelledby` to name the landmark      |
+| `TocIndicator`  | `<span>` | decorative and always hidden from assistive technology                            |
+| `TocList`       | `<ol>`   | —                                                                                   |
+| `TocItem`       | `<li>`   | —                                                                                   |
+| `TocLink`       | `<a>`    | `aria-current="location"` when current                                              |
+| `TocValue`      | none     | the active item's value as text                                                     |
+
+`TocIndicator` is positioned against `TocRoot`. Give the root a non-static position in your stylesheet; this keeps sticky and fixed positioning classes in control. The indicator follows the first current link's nearest list item (or the link when it is not inside a list item). Style the root and indicator with CSS:
+
+```css
+.toc-root {
+    position: relative;
+}
+
+.toc-indicator {
+    background: currentColor;
+    border-radius: 9999px;
+    transition:
+        top 160ms ease,
+        left 160ms ease,
+        width 160ms ease,
+        height 160ms ease;
+}
+
+.toc-root a {
+    position: relative;
+    z-index: 1;
+}
+```
 
 ## Heading utilities
 
@@ -223,6 +258,25 @@ Structural composition parts. They render your children as-is:
 The mapping lane renders one flat `<ol>` in document order; the tracked collection stays flat at any presentation depth. Semantic nesting is your composition: pass `groupHeadings` output and author the `<TocList>`/`TocItem` structure yourself when you want nested lists. The empty state object carries nothing, and the function forms of `className` and `style` are accepted for interface uniformity only.
 
 `TocList` also accepts a function child `(entry) => ReactNode`, modeled on Base UI's `Select.Value`: with the `headings` lane, the part reads the entries `TocRoot` parsed from your `headings` prop, in document order, calling your callback once per heading. It renders the results as one flat `<ol>`, and it keys each mapped child from `entry.id`, so your callback output never needs a key. Each entry is `{ id, title, level }`: indent and style by `level` yourself. Function children throw under the `targetIds` lane, which owns no headings. Plain children render as-is in both lanes and outside any Root; `<TocList />` renders an empty list, not the entries. An empty heading list also renders an empty `<ol>`, and the callback never runs. A nested `TocList` given function children maps the same root entries again, so nest with plain children and `groupHeadings` output instead.
+
+### `TocTitle`
+
+The visible table-of-contents heading. It renders an `<h2>` by default and supports the shared composition interface. To use the heading as the navigation landmark's accessible name, give it an `id` and pass the same value to `TocRoot` as `aria-labelledby`. `aria-labelledby` takes precedence over the root's default `aria-label`.
+
+```tsx
+<TocRoot aria-labelledby="page-toc-title" targetIds={targetIds}>
+    <TocTitle id="page-toc-title">On this page</TocTitle>
+    <TocList>{/* links */}</TocList>
+</TocRoot>
+```
+
+### `TocIndicator`
+
+A decorative `<span>` that tracks the first link with `aria-current="location"` inside its `TocRoot`. It positions itself over the nearest `<li>`; if the link is not inside a list item, it follows the link. It is hidden until a current link has a layout box, and it always has `aria-hidden="true"`.
+
+The root is the indicator's positioning container and needs a non-static position set in CSS. It measures after React commits and current-target changes, observes the root, its direct children, links, and list items for resizes, and follows descendant scrolling. Its inline `top`, `left`, `width`, and `height` place it; use `className` or `style` for its appearance and transitions. Its render state is `{ visible: boolean }`, with `data-visible` present when it has a target. When several links in one root share the current target, the first link in document order determines the indicator position.
+
+`TocIndicator` must render inside a `TocRoot`.
 
 ### `TocLink`
 

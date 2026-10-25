@@ -42,6 +42,8 @@ const UNPAIRED_SURROGATE_PATTERN =
 
 const ARIA_CURRENT_LOCATION = "location";
 
+const CURRENT_LINK_SELECTOR = `[aria-current="${ARIA_CURRENT_LOCATION}"]`;
+
 const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": "Table of contents" };
 
 const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
@@ -64,6 +66,9 @@ const INVALID_TARGET_ID_ON_LINK_MESSAGE =
     "Invalid targetId on TocLink: it must be a valid target ID.";
 
 const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
+
+const INDICATOR_OUTSIDE_ROOT_MESSAGE =
+    "TocIndicator must render inside a TocRoot.";
 
 const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX =
     "targetId is not in the root collection: ";
@@ -148,6 +153,12 @@ export interface TocLinkState {
     current: boolean;
 }
 
+export interface TocTitleState {}
+
+export interface TocIndicatorState {
+    visible: boolean;
+}
+
 export interface TocListState {}
 
 export interface TocItemState {}
@@ -160,6 +171,7 @@ interface TocRootContextValue {
     targetIds: readonly string[];
     headings: readonly Heading[] | null;
     currentId: string | null;
+    navElementRef: React.RefObject<HTMLElement | null>;
 }
 
 /** A valid target ID is non-empty and holds no ASCII whitespace or unpaired surrogate. */
@@ -871,8 +883,14 @@ export function TocRoot(componentProps: TocRootProps) {
             targetIds: trackedSource.targetIds,
             headings: trackedHeadings,
             currentId: tracker.currentId,
+            navElementRef: tracker.navElementRef,
         }),
-        [trackedSource.targetIds, trackedHeadings, tracker.currentId],
+        [
+            trackedSource.targetIds,
+            trackedHeadings,
+            tracker.currentId,
+            tracker.navElementRef,
+        ],
     );
 
     const state: TocRootState = { currentId: tracker.currentId };
@@ -900,6 +918,26 @@ export function TocRoot(componentProps: TocRootProps) {
         <TocRootContext.Provider value={contextValue}>
             {element}
         </TocRootContext.Provider>
+    );
+}
+
+export interface TocTitleProps extends TocCompositionProps<
+    "h2",
+    TocTitleState
+> {}
+
+/** A visible heading for the table of contents. */
+export function TocTitle(componentProps: TocTitleProps) {
+    const { className, style, render, ref, ...elementProps } = componentProps;
+
+    return useRenderElement<TocTitleState, HTMLHeadingElement, "h2">(
+        "h2",
+        componentProps,
+        {
+            state: EMPTY_PART_STATE,
+            ref,
+            props: [elementProps],
+        },
     );
 }
 
@@ -1020,6 +1058,162 @@ export function TocLink(componentProps: TocLinkProps) {
                 }),
             ],
         },
+    );
+}
+
+interface TocIndicatorPosition {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+}
+
+export interface TocIndicatorProps extends TocCompositionProps<
+    "span",
+    TocIndicatorState
+> {}
+
+/** A decorative marker that follows the current list item. */
+export function TocIndicator(componentProps: TocIndicatorProps) {
+    const context = React.useContext(TocRootContext);
+    const { className, style, render, ref, ...elementProps } = componentProps;
+
+    if (context === undefined) throw new Error(INDICATOR_OUTSIDE_ROOT_MESSAGE);
+
+    const position = useTocIndicatorPosition(
+        context.navElementRef,
+        context.currentId,
+    );
+    const state: TocIndicatorState = { visible: position !== null };
+
+    return useRenderElement<TocIndicatorState, HTMLSpanElement, "span">(
+        "span",
+        componentProps,
+        {
+            state,
+            ref,
+            props: [
+                elementProps,
+                {
+                    "aria-hidden": true,
+                    hidden: position === null,
+                    style: {
+                        position: "absolute",
+                        top: position?.top ?? 0,
+                        left: position?.left ?? 0,
+                        width: position?.width ?? 0,
+                        height: position?.height ?? 0,
+                        boxSizing: "border-box",
+                        pointerEvents: "none",
+                    },
+                },
+            ],
+        },
+    );
+}
+
+function useTocIndicatorPosition(
+    navElementRef: React.RefObject<HTMLElement | null>,
+    currentId: string | null,
+): TocIndicatorPosition | null {
+    const [position, setPosition] =
+        React.useState<TocIndicatorPosition | null>(null);
+    const animationFrame = useAnimationFrame();
+    const hasCurrent = currentId !== null;
+
+    const measurePosition = useStableCallback(() => {
+        const navElement = navElementRef.current;
+        if (navElement === null || currentId === null) {
+            setPosition(null);
+            return;
+        }
+
+        const currentLink = navElement.querySelector<HTMLElement>(
+            CURRENT_LINK_SELECTOR,
+        );
+        if (currentLink === null || currentLink.getClientRects().length === 0) {
+            setPosition(null);
+            return;
+        }
+
+        const listItem = currentLink.closest("li");
+        const itemElement =
+            listItem !== null && navElement.contains(listItem)
+                ? listItem
+                : currentLink;
+        const navRect = navElement.getBoundingClientRect();
+        const itemRect = itemElement.getBoundingClientRect();
+        const nextPosition: TocIndicatorPosition = {
+            top:
+                itemRect.top -
+                navRect.top -
+                navElement.clientTop +
+                navElement.scrollTop,
+            left:
+                itemRect.left -
+                navRect.left -
+                navElement.clientLeft +
+                navElement.scrollLeft,
+            width: itemRect.width,
+            height: itemRect.height,
+        };
+
+        setPosition((previousPosition) =>
+            isSameTocIndicatorPosition(previousPosition, nextPosition)
+                ? previousPosition
+                : nextPosition,
+        );
+    });
+
+    const scheduleMeasurement = useStableCallback(() => {
+        animationFrame.request(measurePosition);
+    });
+
+    useIsoLayoutEffect(measurePosition);
+
+    useIsoLayoutEffect(() => {
+        const navElement = navElementRef.current;
+        if (navElement === null || !hasCurrent) return;
+
+        const resizeObserver = new ResizeObserver(scheduleMeasurement);
+        resizeObserver.observe(navElement);
+        const resizeTargets = new Set<Element>(navElement.children);
+        for (const target of navElement.querySelectorAll(
+            "li, a, [role='link']",
+        )) {
+            resizeTargets.add(target);
+        }
+        for (const target of resizeTargets) {
+            resizeObserver.observe(target);
+        }
+
+        const detachScrollEvent = addEventListener(
+            navElement,
+            "scroll",
+            scheduleMeasurement,
+            { capture: true, passive: true },
+        );
+
+        return () => {
+            detachScrollEvent();
+            resizeObserver.disconnect();
+            animationFrame.cancel();
+        };
+    }, [animationFrame, hasCurrent, navElementRef, scheduleMeasurement]);
+
+    return position;
+}
+
+function isSameTocIndicatorPosition(
+    previousPosition: TocIndicatorPosition | null,
+    nextPosition: TocIndicatorPosition,
+): boolean {
+    return (
+        previousPosition !== null &&
+        previousPosition.top === nextPosition.top &&
+        previousPosition.left === nextPosition.left &&
+        previousPosition.width === nextPosition.width &&
+        previousPosition.height === nextPosition.height
     );
 }
 
