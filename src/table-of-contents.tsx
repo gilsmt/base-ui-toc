@@ -44,8 +44,6 @@ const ARIA_CURRENT_LOCATION = "location";
 
 const CURRENT_LINK_SELECTOR = `[aria-current="${ARIA_CURRENT_LOCATION}"]`;
 
-const DEFAULT_ROOT_LABEL_PROPS = { "aria-label": "Table of contents" };
-
 const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
 
 const INVALID_COLLECTION_MESSAGE =
@@ -290,9 +288,8 @@ function parseHeadings(headings: unknown): readonly Heading[] {
         if (!isRecord(candidate))
             throw new Error(INVALID_HEADING_RECORD_MESSAGE);
 
-        const id = candidate["id"];
-        const level = candidate["level"];
-        const title = candidate["title"];
+        const { id, level, title } = candidate;
+
         if (!isValidTargetId(id))
             throw new Error(INVALID_HEADING_ID_MESSAGE_PREFIX + String(id));
 
@@ -323,7 +320,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
 
-export type TocTrackingSource =
+type TocTrackingSource =
     | { lane: "targetIds"; targetIds: readonly string[] }
     | {
           lane: "headings";
@@ -348,7 +345,6 @@ export function parseTrackingSource(props: unknown): TocTrackingSource {
             targetIds: parseTargetCollection(targetIds),
         };
     if (headings !== undefined) {
-        // The same validation groupHeadings applies; only the grouping is left out.
         const parsedHeadings = parseHeadings(headings);
         return {
             lane: "headings",
@@ -376,8 +372,7 @@ export function discoverHeadings(
     const seenIds = new Set<string>();
     const headings: Heading[] = [];
 
-    const headingElements = scope.querySelectorAll(HEADINGS_SELECTOR);
-    for (const headingElement of headingElements) {
+    for (const headingElement of scope.querySelectorAll(HEADINGS_SELECTOR)) {
         if (isInHiddenSubtree(headingElement)) {
             const hiddenId = headingElement.getAttribute("id");
             if (isValidTargetId(hiddenId)) seenIds.add(hiddenId);
@@ -517,13 +512,17 @@ function parseScrollElement(candidate: unknown): Element | null | undefined {
 
 function isDomElement(candidate: unknown): candidate is Element {
     if (typeof candidate !== "object" || candidate === null) return false;
+
     // Check the element's own realm so Elements from iframes remain valid.
     const ownerDocument =
         "ownerDocument" in candidate ? candidate.ownerDocument : undefined;
+
     if (!isRecord(ownerDocument)) return false;
     const defaultView = ownerDocument["defaultView"];
+
     if (!isRecord(defaultView)) return false;
     const elementConstructor = defaultView["Element"];
+
     return (
         typeof elementConstructor === "function" &&
         candidate instanceof elementConstructor
@@ -850,30 +849,29 @@ export function TocRoot(componentProps: TocRootProps) {
         ...elementProps
     } = componentProps;
 
-    const trackedSource = React.useMemo(
+    const source = React.useMemo(
         () => parseTrackingSource({ targetIds, headings }),
         [targetIds, headings],
     );
     const tracker = useTocTracker({
-        targetIds: trackedSource.targetIds,
+        targetIds: source.targetIds,
         scrollElement: parseScrollElement(scrollElement),
         activationOffset: parseActivationOffset(activationOffset),
         onCurrentChange,
         actionsRef,
     });
 
-    const trackedHeadings =
-        trackedSource.lane === "headings" ? trackedSource.headings : null;
+    const trackedHeadings = source.lane === "headings" ? source.headings : null;
 
     const contextValue: TocRootContextValue = React.useMemo(
         () => ({
-            targetIds: trackedSource.targetIds,
+            targetIds: source.targetIds,
             headings: trackedHeadings,
             currentId: tracker.currentId,
             navElementRef: tracker.navElementRef,
         }),
         [
-            trackedSource.targetIds,
+            source.targetIds,
             trackedHeadings,
             tracker.currentId,
             tracker.navElementRef,
@@ -890,7 +888,7 @@ export function TocRoot(componentProps: TocRootProps) {
             ref: [ref, tracker.navElementRef],
             stateAttributesMapping: TOC_ROOT_STATE_ATTRIBUTES_MAPPING,
             props: [
-                DEFAULT_ROOT_LABEL_PROPS,
+                { "aria-label": "Table of contents" },
                 elementProps,
                 (props) => ({
                     ...props,
@@ -969,6 +967,7 @@ function renderHeadingEntries(
 ): React.ReactNode {
     if (headings === null)
         throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
+
     return headings.map((entry) => (
         <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
     ));
@@ -1019,7 +1018,9 @@ export function TocLink(componentProps: TocLinkProps) {
 
     if (!isValidTargetId(targetId))
         throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
+
     if (context === undefined) throw new Error(LINK_OUTSIDE_ROOT_MESSAGE);
+
     if (!context.targetIds.includes(targetId))
         throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
 
