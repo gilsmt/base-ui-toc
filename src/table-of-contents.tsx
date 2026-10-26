@@ -5,6 +5,7 @@ import { useRenderElement } from "@base-ui/react/internals/useRenderElement";
 import type { ComponentRenderFn, HTMLProps } from "@base-ui/react/use-render";
 import { addEventListener } from "@base-ui/utils/addEventListener";
 import { createLogOnce } from "@base-ui/utils/createLogOnce";
+import { fastObjectShallowCompare } from "@base-ui/utils/fastObjectShallowCompare";
 import { useAnimationFrame } from "@base-ui/utils/useAnimationFrame";
 import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
@@ -110,8 +111,6 @@ const INVALID_SCROLL_ELEMENT_MESSAGE =
 
 const SCROLL_ELEMENT_DOCUMENT_MESSAGE =
     "Invalid scrollElement: it must belong to the same document as TocRoot.";
-
-const EMPTY_PART_STATE: Record<string, never> = {};
 
 const EMPTY_HEADINGS: readonly Heading[] = [];
 
@@ -934,7 +933,6 @@ export function TocTitle(componentProps: TocTitleProps) {
         "h2",
         componentProps,
         {
-            state: EMPTY_PART_STATE,
             ref,
             props: [elementProps],
         },
@@ -971,7 +969,6 @@ export function TocList(componentProps: TocListProps) {
         "ol",
         componentProps,
         {
-            state: EMPTY_PART_STATE,
             ref,
             props: [elementProps, (props) => ({ ...props, children })],
         },
@@ -1011,7 +1008,6 @@ export function TocItem(componentProps: TocItemProps) {
         "li",
         componentProps,
         {
-            state: EMPTY_PART_STATE,
             ref,
             props: [elementProps],
         },
@@ -1159,7 +1155,7 @@ function useTocIndicatorPosition(
         };
 
         setPosition((previousPosition) =>
-            isSameTocIndicatorPosition(previousPosition, nextPosition)
+            fastObjectShallowCompare(previousPosition, nextPosition)
                 ? previousPosition
                 : nextPosition,
         );
@@ -1202,19 +1198,6 @@ function useTocIndicatorPosition(
     }, [animationFrame, hasCurrent, navElementRef, scheduleMeasurement]);
 
     return position;
-}
-
-function isSameTocIndicatorPosition(
-    previousPosition: TocIndicatorPosition | null,
-    nextPosition: TocIndicatorPosition,
-): boolean {
-    return (
-        previousPosition !== null &&
-        previousPosition.top === nextPosition.top &&
-        previousPosition.left === nextPosition.left &&
-        previousPosition.width === nextPosition.width &&
-        previousPosition.height === nextPosition.height
-    );
 }
 
 export interface TocValueProps {
