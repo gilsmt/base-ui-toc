@@ -8,7 +8,6 @@ import { createLogOnce } from "@base-ui/utils/createLogOnce";
 import { fastObjectShallowCompare } from "@base-ui/utils/fastObjectShallowCompare";
 import { useAnimationFrame } from "@base-ui/utils/useAnimationFrame";
 import { useIsoLayoutEffect } from "@base-ui/utils/useIsoLayoutEffect";
-import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
 const MIN_HEADING_LEVEL = 1;
@@ -651,23 +650,18 @@ function useTocTracker(props: {
         targetIds,
         scrollElement,
         activationOffset,
-        onCurrentChange,
+        onCurrentChange: onCurrentChangeProp,
         actionsRef,
     } = props;
 
+    const animationFrame = useAnimationFrame();
     const navElementRef = React.useRef<HTMLElement | null>(null);
     const currentIdRef = React.useRef<string | null>(null);
-    const committedPropsRef = useRefWithInit(() => ({
-        targetIds,
-        scrollElement,
-        activationOffset,
-    }));
     const [currentId, setCurrentIdState] = React.useState<string | null>(null);
-    const animationFrame = useAnimationFrame();
 
-    const notifyCurrentIdChange = useStableCallback(onCurrentChange);
+    const onCurrentChange = useStableCallback(onCurrentChangeProp);
 
-    const publishCurrentId = useStableCallback((nextId: string | null) => {
+    const setCurrentId = useStableCallback((nextId: string | null) => {
         if (currentIdRef.current === nextId) return;
         currentIdRef.current = nextId;
         setCurrentIdState(nextId);
@@ -679,78 +673,70 @@ function useTocTracker(props: {
     useIsoLayoutEffect(() => {
         if (notifiedIdRef.current === currentId) return;
         notifiedIdRef.current = currentId;
-        notifyCurrentIdChange(currentId);
-    }, [currentId, notifyCurrentIdChange]);
+        onCurrentChange(currentId);
+    }, [currentId, onCurrentChange]);
 
-    const measureAndPublish = React.useCallback(() => {
-        const navElement = navElementRef.current;
-        if (navElement === null) return;
+    const flush = useStableCallback(() => {
+        const container = navElementRef.current;
+        if (container === null) return;
 
-        const committed = committedPropsRef.current;
-        const snapshot = readTocScrollSnapshot({
-            doc: navElement.ownerDocument,
-            targetIds: committed.targetIds,
-            scrollElement: committed.scrollElement,
-            activationOffsetPx: committed.activationOffset,
+        const next = readTocScrollSnapshot({
+            doc: container.ownerDocument,
+            targetIds,
+            scrollElement,
+            activationOffsetPx: activationOffset,
         });
-        if (snapshot === null) {
+        if (next === null) {
             // An unavailable surface cannot be measured, so clear any stale current target.
-            publishCurrentId(null);
+            setCurrentId(null);
             return;
         }
-        publishCurrentId(selectCurrentTargetId(snapshot));
-    }, [publishCurrentId]);
+        setCurrentId(selectCurrentTargetId(next));
+    });
 
-    const scheduleMeasurement = React.useCallback(() => {
-        animationFrame.request(measureAndPublish);
-    }, [measureAndPublish, animationFrame]);
+    const requestFlush = useStableCallback(() => {
+        animationFrame.request(flush);
+    });
 
     // refresh() remeasures and never scrolls; the unmount cleanup nulls the handle only while it is current.
     useIsoLayoutEffect(() => {
         if (actionsRef === undefined) return;
-        const actions: TocActions = { refresh: scheduleMeasurement };
+        const actions: TocActions = { refresh: requestFlush };
         actionsRef.current = actions;
         return () => {
             if (actionsRef.current === actions) actionsRef.current = null;
         };
-    }, [actionsRef, scheduleMeasurement]);
+    }, [actionsRef, requestFlush]);
 
     useIsoLayoutEffect(() => {
-        const navElement = navElementRef.current;
+        const container = navElementRef.current;
         if (
-            navElement !== null &&
+            container !== null &&
             scrollElement !== null &&
             scrollElement !== undefined &&
-            scrollElement.ownerDocument !== navElement.ownerDocument
+            scrollElement.ownerDocument !== container.ownerDocument
         )
             throw new Error(SCROLL_ELEMENT_DOCUMENT_MESSAGE);
 
-        // The committed props are the measurement input, so they update before any scheduled work.
-        committedPropsRef.current = {
-            targetIds,
-            scrollElement,
-            activationOffset,
-        };
-
         // Immediate transitions: an inactive surface or a departed current ID publishes null without a measurement.
         if (scrollElement === null) {
-            publishCurrentId(null);
+            setCurrentId(null);
             return;
         }
         if (
             currentIdRef.current !== null &&
             !targetIds.includes(currentIdRef.current)
         )
-            publishCurrentId(null);
+            setCurrentId(null);
 
         // Without the rendered nav, there is no document or surface to measure.
-        if (navElement === null) {
-            publishCurrentId(null);
+        if (container === null) {
+            setCurrentId(null);
             return;
         }
-        const doc = navElement.ownerDocument;
+        const doc = container.ownerDocument;
 
-        scheduleMeasurement();
+        requestFlush();
 
         // The root element tracks like an omitted `scrollElement`: root-scroller
         // events target the Document, and its bounding-rect top is the document origin.
@@ -761,19 +747,19 @@ function useTocTracker(props: {
             const view = doc.defaultView;
             // A document without a window cannot carry listeners; publish null instead of keeping a stale value.
             if (view === null) {
-                publishCurrentId(null);
+                setCurrentId(null);
                 return;
             }
             const detachScrollEvent = addEventListener(
                 view,
                 "scroll",
-                scheduleMeasurement,
+                requestFlush,
                 { passive: true },
             );
             const detachResizeEvent = addEventListener(
                 view,
                 "resize",
-                scheduleMeasurement,
+                requestFlush,
             );
             return () => {
                 detachScrollEvent();
@@ -782,19 +768,21 @@ function useTocTracker(props: {
             };
         }
 
-        if (scrollElement.clientHeight <= 0) publishCurrentId(null);
+        if (scrollElement.clientHeight <= 0) setCurrentId(null);
+
         const detachScrollEvent = addEventListener(
             scrollElement,
             "scroll",
-            scheduleMeasurement,
+            requestFlush,
             { passive: true },
         );
         const surfaceObserver = new ResizeObserver(() => {
             // A 0→size box transition reactivates tracking; a lost box deactivates it at once.
-            if (scrollElement.clientHeight > 0) scheduleMeasurement();
-            else publishCurrentId(null);
+            if (scrollElement.clientHeight > 0) requestFlush();
+            else setCurrentId(null);
         });
         surfaceObserver.observe(scrollElement);
+
         return () => {
             detachScrollEvent();
             surfaceObserver.disconnect();
@@ -802,9 +790,9 @@ function useTocTracker(props: {
         };
     }, [
         activationOffset,
-        publishCurrentId,
+        setCurrentId,
         animationFrame,
-        scheduleMeasurement,
+        requestFlush,
         scrollElement,
         targetIds,
     ]);
