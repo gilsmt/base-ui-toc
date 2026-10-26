@@ -396,6 +396,57 @@ describe("collection identity", () => {
 });
 
 describe("current change notification", () => {
+    test("a current target change preserves the heading render callback output", async () => {
+        addHeadings(HEADINGS);
+        headingTops.set("intro", 0);
+        headingTops.set("scope", 400);
+
+        const entries: readonly Heading[] = [
+            { id: "intro", title: "Intro", level: 2 },
+            { id: "scope", title: "Scope", level: 2 },
+        ];
+        let entryRenders = 0;
+        const container = win.document.createElement("div");
+
+        const { unmount } = await mount(
+            <TocRoot headings={entries}>
+                <TocList>
+                    {(entry) => {
+                        entryRenders += 1;
+                        return (
+                            <TocItem>
+                                <TocLink targetId={entry.id}>
+                                    {entry.title}
+                                </TocLink>
+                            </TocItem>
+                        );
+                    }}
+                </TocList>
+            </TocRoot>,
+            container,
+        );
+        await flushFrames();
+
+        const rendersAfterInitialSelection = entryRenders;
+        headingTops.set("scope", -10);
+        scroll();
+        await flushFrames();
+
+        expect(entryRenders).toBe(rendersAfterInitialSelection);
+        expect(
+            container
+                .querySelector('a[href="#intro"]')
+                ?.getAttribute("aria-current"),
+        ).toBe(null);
+        expect(
+            container
+                .querySelector('a[href="#scope"]')
+                ?.getAttribute("aria-current"),
+        ).toBe("location");
+
+        await unmount();
+    });
+
     test("a parent re-render does not re-notify", async () => {
         addHeadings(HEADINGS);
         headingTops.set("intro", 0);

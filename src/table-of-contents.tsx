@@ -166,7 +166,6 @@ export interface TocActions {
 interface TocRootContextValue {
     targetIds: readonly string[];
     headings: readonly Heading[] | null;
-    currentId: string | null;
     navElementRef: React.RefObject<HTMLElement | null>;
 }
 
@@ -533,6 +532,8 @@ const TocRootContext = React.createContext<TocRootContextValue | undefined>(
     undefined,
 );
 
+const TocCurrentIdContext = React.createContext<string | null>(null);
+
 function hasReachedBottom(
     scrollHeightPx: number,
     clientHeightPx: number,
@@ -867,15 +868,9 @@ export function TocRoot(componentProps: TocRootProps) {
         () => ({
             targetIds: source.targetIds,
             headings: trackedHeadings,
-            currentId: tracker.currentId,
             navElementRef: tracker.navElementRef,
         }),
-        [
-            source.targetIds,
-            trackedHeadings,
-            tracker.currentId,
-            tracker.navElementRef,
-        ],
+        [source.targetIds, trackedHeadings, tracker.navElementRef],
     );
 
     const state: TocRootState = { currentId: tracker.currentId };
@@ -901,7 +896,9 @@ export function TocRoot(componentProps: TocRootProps) {
 
     return (
         <TocRootContext.Provider value={contextValue}>
-            {element}
+            <TocCurrentIdContext.Provider value={tracker.currentId}>
+                {element}
+            </TocCurrentIdContext.Provider>
         </TocRootContext.Provider>
     );
 }
@@ -1013,6 +1010,7 @@ export interface TocLinkProps extends TocCompositionProps<
 /** A fragment link to one configured target; component-owned `href` and `aria-current` beat consumer values. */
 export function TocLink(componentProps: TocLinkProps) {
     const context = React.useContext(TocRootContext);
+    const currentId = React.useContext(TocCurrentIdContext);
     const { targetId, className, style, render, ref, ...elementProps } =
         componentProps;
 
@@ -1024,7 +1022,7 @@ export function TocLink(componentProps: TocLinkProps) {
     if (!context.targetIds.includes(targetId))
         throw new Error(LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX + targetId);
 
-    const state: TocLinkState = { current: context.currentId === targetId };
+    const state: TocLinkState = { current: currentId === targetId };
 
     return useRenderElement<TocLinkState, HTMLAnchorElement, "a">(
         "a",
@@ -1061,6 +1059,8 @@ export interface TocIndicatorProps extends TocCompositionProps<
 /** A decorative marker that follows the current list item. */
 export function TocIndicator(componentProps: TocIndicatorProps) {
     const context = React.useContext(TocRootContext);
+    const currentId = React.useContext(TocCurrentIdContext);
+
     const { className, style, render, ref, ...elementProps } = componentProps;
 
     if (context === undefined) throw new Error(INDICATOR_OUTSIDE_ROOT_MESSAGE);
@@ -1070,7 +1070,7 @@ export function TocIndicator(componentProps: TocIndicatorProps) {
     const position = useTocIndicatorPosition(
         context.navElementRef,
         indicatorElementRef,
-        context.currentId,
+        currentId,
         context.targetIds,
     );
 
@@ -1218,9 +1218,10 @@ export interface TocValueProps {
  */
 export function TocValue({ children }: TocValueProps) {
     const context = React.useContext(TocRootContext);
+    const currentId = React.useContext(TocCurrentIdContext);
     if (context === undefined) throw new Error(VALUE_OUTSIDE_ROOT_MESSAGE);
 
-    const value = selectActiveValue(context.headings, context.currentId);
+    const value = selectActiveValue(context.headings, currentId);
     if (typeof children === "function") return children(value);
     return children == null ? value : children;
 }
