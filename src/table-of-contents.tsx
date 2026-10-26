@@ -231,9 +231,13 @@ export function selectCurrentTargetId(
 
 /** Trims and collapses whitespace runs; throws when the result is empty. */
 export function cleanHeadingTitle(title: string): string {
-    const cleaned = title.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
+    const cleaned = normalizeHeadingTitle(title);
     if (cleaned === "") throw new Error(EMPTY_HEADING_TITLE_MESSAGE);
     return cleaned;
+}
+
+function normalizeHeadingTitle(title: string): string {
+    return title.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
 }
 
 function isHeadingLevelValue(candidate: unknown): candidate is HeadingLevel {
@@ -388,11 +392,11 @@ export function discoverHeadings(
 
         const fragments: string[] = [];
         collectTitleText(headingElement, fragments);
-        const rawTitle = fragments.join("");
+        const title = normalizeHeadingTitle(fragments.join(""));
 
         if (!isValidTargetId(id)) {
             warn(
-                `Skipped ${describeHeading(headingElement, rawTitle)}: it has no valid id, so it cannot be a link target.`,
+                `Skipped ${describeHeading(headingElement, title)}: it has no valid id, so it cannot be a link target.`,
             );
             continue;
         }
@@ -400,30 +404,29 @@ export function discoverHeadings(
         // the first one, so the later heading is unreachable.
         if (seenIds.has(id)) {
             warn(
-                `Skipped ${describeHeading(headingElement, rawTitle)}: the id "${id}" already belongs to an earlier heading.`,
+                `Skipped ${describeHeading(headingElement, title)}: the id "${id}" already belongs to an earlier heading.`,
             );
             continue;
         }
         seenIds.add(id);
 
-        if (rawTitle.trim() === "") {
+        if (title === "") {
             warn(
-                `Skipped ${describeHeading(headingElement, rawTitle)}: it has no text to show.`,
+                `Skipped ${describeHeading(headingElement, title)}: it has no text to show.`,
             );
             continue;
         }
 
-        headings.push({ id, title: cleanHeadingTitle(rawTitle), level });
+        headings.push({ id, title, level });
     }
     return headings;
 }
 
-function describeHeading(element: Element, rawTitle: string): string {
+function describeHeading(element: Element, title: string): string {
     const tag = element.tagName.toLowerCase();
     const id = element.getAttribute("id");
-    const text = rawTitle.replace(TITLE_WHITESPACE_RUN_PATTERN, " ").trim();
     const idPart = id === null ? "" : ` id="${id}"`;
-    return `<${tag}${idPart}> "${text}"`;
+    return `<${tag}${idPart}> "${title}"`;
 }
 
 function readDiscoveryLevels(options?: {
