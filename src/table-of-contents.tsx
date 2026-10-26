@@ -372,22 +372,24 @@ export function discoverHeadings(
     const headings: Heading[] = [];
 
     for (const headingElement of scope.querySelectorAll(HEADINGS_SELECTOR)) {
-        if (isInHiddenSubtree(headingElement)) {
-            const hiddenId = headingElement.getAttribute("id");
-            if (isValidTargetId(hiddenId)) seenIds.add(hiddenId);
-            continue;
-        }
-
         const level =
             HEADING_LEVEL_BY_TAG_NAME[headingElement.tagName.toUpperCase()];
         if (level === undefined) continue;
-        if (!selectedLevelSet.has(level)) continue;
+
+        const id = headingElement.getAttribute("id");
+        if (
+            isInHiddenSubtree(headingElement) ||
+            !selectedLevelSet.has(level)
+        ) {
+            // Filtered headings can still own the ID returned by getElementById.
+            if (isValidTargetId(id)) seenIds.add(id);
+            continue;
+        }
 
         const fragments: string[] = [];
         collectTitleText(headingElement, fragments);
         const rawTitle = fragments.join("");
 
-        const id = headingElement.getAttribute("id");
         if (!isValidTargetId(id)) {
             warn(
                 `Skipped ${describeHeading(headingElement, rawTitle)}: it has no valid id, so it cannot be a link target.`,
