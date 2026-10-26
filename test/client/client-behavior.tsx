@@ -2,6 +2,7 @@ import * as React from "react";
 import { afterAll, describe, expect, test } from "bun:test";
 import { createRoot } from "react-dom/client";
 import { Window } from "happy-dom";
+import type { Heading } from "../../src/table-of-contents";
 
 // The client renderer and the server renderer each install React's dispatcher
 // at module scope, so they cannot share a process. This file runs on its own
@@ -28,6 +29,7 @@ setGlobal("ResizeObserver", win.ResizeObserver);
 setGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const headingTops = new Map<string, number>();
+const elementLefts = new Map<string, number>();
 const elementHeights = new Map<string, number>();
 
 // happy-dom has its own DOM types, so the prototype is patched through a
@@ -42,15 +44,16 @@ elementPrototype["getBoundingClientRect"] = function getBoundingClientRect(
 ) {
     const id = this.getAttribute("id");
     const top = id === null ? 0 : (headingTops.get(id) ?? 0);
+    const left = id === null ? 0 : (elementLefts.get(id) ?? 0);
     const height = id === null ? 24 : (elementHeights.get(id) ?? 24);
     return {
         top,
         bottom: top + height,
-        left: 0,
-        right: 0,
+        left,
+        right: left,
         width: 0,
         height,
-        x: 0,
+        x: left,
         y: top,
         toJSON: () => ({}),
     };
@@ -193,6 +196,13 @@ const HEADINGS = ["intro", "scope"];
 // A collection the consumer keeps stable across renders.
 const STABLE_IDS = HEADINGS;
 const STABLE_ONE_ID = ["intro"];
+const INDICATOR_INITIAL_HEADINGS: readonly Heading[] = [
+    { id: "intro", title: "Intro", level: 2 },
+];
+const INDICATOR_UPDATED_HEADINGS: readonly Heading[] = [
+    ...INDICATOR_INITIAL_HEADINGS,
+    { id: "scope", title: "Scope", level: 2 },
+];
 
 function addHeadings(ids: readonly string[]) {
     for (const id of ids) {
@@ -871,6 +881,138 @@ describe("TocIndicator", () => {
             }
 
             expect(observer?.disconnected).toBe(true);
+        });
+    });
+
+    test("positions inside the indicator offset parent and forwards its ref", async () => {
+        await withTestResizeObserver(async () => {
+            addHeadings(STABLE_ONE_ID);
+            headingTops.set("intro", 0);
+            headingTops.set("indicator-offset-wrapper", 100);
+            elementLefts.set("indicator-offset-wrapper", 100);
+            headingTops.set("indicator-offset-nav", 120);
+            elementLefts.set("indicator-offset-nav", 130);
+            headingTops.set("indicator-offset-row", 160);
+            elementLefts.set("indicator-offset-row", 145);
+
+            const positioningWrapper = win.document.createElement("div");
+            positioningWrapper.id = "indicator-offset-wrapper";
+            positioningWrapper.style.position = "relative";
+            Object.defineProperty(positioningWrapper, "clientTop", {
+                value: 4,
+            });
+            Object.defineProperty(positioningWrapper, "clientLeft", {
+                value: 5,
+            });
+            positioningWrapper.scrollTop = 7;
+            positioningWrapper.scrollLeft = 8;
+
+            const forwardedIndicatorRef: {
+                current: HTMLSpanElement | null;
+            } = { current: null };
+            const indicatorRef: React.RefCallback<HTMLSpanElement> = (
+                element,
+            ) => {
+                forwardedIndicatorRef.current = element;
+                if (element === null) return;
+                Object.defineProperty(element, "offsetParent", {
+                    configurable: true,
+                    value: positioningWrapper,
+                });
+            };
+
+            const mounted = await mount(
+                <TocRoot id="indicator-offset-nav" targetIds={STABLE_ONE_ID}>
+                    <TocIndicator
+                        className="toc-indicator"
+                        ref={indicatorRef}
+                    />
+                    <TocList>
+                        <TocItem id="indicator-offset-row">
+                            <TocLink targetId="intro">Intro</TocLink>
+                        </TocItem>
+                    </TocList>
+                </TocRoot>,
+                positioningWrapper,
+            );
+
+            try {
+                await flushFrames();
+
+                const indicator = queryHTMLElement(
+                    mounted.container,
+                    ".toc-indicator",
+                );
+                expect(indicator?.style.top).toBe("63px");
+                expect(indicator?.style.left).toBe("48px");
+                expect(
+                    forwardedIndicatorRef.current?.getAttribute("class"),
+                ).toBe("toc-indicator");
+            } finally {
+                await mounted.unmount();
+            }
+        });
+    });
+
+    test("reobserves rows when the heading collection changes", async () => {
+        await withTestResizeObserver(async () => {
+            addHeadings(HEADINGS);
+            headingTops.set("intro", 0);
+            headingTops.set("scope", 400);
+
+            function App({ includeScope }: { includeScope: boolean }) {
+                return (
+                    <TocRoot
+                        headings={
+                            includeScope
+                                ? INDICATOR_UPDATED_HEADINGS
+                                : INDICATOR_INITIAL_HEADINGS
+                        }
+                    >
+                        <TocIndicator className="toc-indicator" />
+                        <TocList>
+                            {(heading) => (
+                                <TocItem
+                                    id={`indicator-collection-row-${heading.id}`}
+                                >
+                                    <TocLink targetId={heading.id}>
+                                        {heading.title}
+                                    </TocLink>
+                                </TocItem>
+                            )}
+                        </TocList>
+                    </TocRoot>
+                );
+            }
+
+            const mounted = await mount(<App includeScope={false} />);
+            let initialObserver: TestResizeObserver | undefined;
+            let updatedObserver: TestResizeObserver | undefined;
+            try {
+                await flushFrames();
+
+                initialObserver = TestResizeObserver.instances[0];
+                if (initialObserver === undefined)
+                    throw new Error("Initial indicator observer missing.");
+
+                await mounted.rerender(<App includeScope />);
+                await flushFrames();
+
+                expect(TestResizeObserver.instances).toHaveLength(2);
+                updatedObserver = TestResizeObserver.instances[1];
+                if (updatedObserver === undefined)
+                    throw new Error("Updated indicator observer missing.");
+                expect(initialObserver.disconnected).toBe(true);
+                expect(
+                    updatedObserver.hasObservedTargetWithId(
+                        "indicator-collection-row-scope",
+                    ),
+                ).toBe(true);
+            } finally {
+                await mounted.unmount();
+            }
+
+            expect(updatedObserver?.disconnected).toBe(true);
         });
     });
 

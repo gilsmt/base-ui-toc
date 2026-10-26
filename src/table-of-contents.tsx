@@ -1076,10 +1076,15 @@ export function TocIndicator(componentProps: TocIndicatorProps) {
 
     if (context === undefined) throw new Error(INDICATOR_OUTSIDE_ROOT_MESSAGE);
 
+    const indicatorElementRef = React.useRef<HTMLSpanElement | null>(null);
+
     const position = useTocIndicatorPosition(
         context.navElementRef,
+        indicatorElementRef,
         context.currentId,
+        context.targetIds,
     );
+
     const state: TocIndicatorState = { visible: position !== null };
 
     return useRenderElement<TocIndicatorState, HTMLSpanElement, "span">(
@@ -1087,7 +1092,7 @@ export function TocIndicator(componentProps: TocIndicatorProps) {
         componentProps,
         {
             state,
-            ref,
+            ref: [ref, indicatorElementRef],
             props: [
                 elementProps,
                 {
@@ -1110,21 +1115,24 @@ export function TocIndicator(componentProps: TocIndicatorProps) {
 
 function useTocIndicatorPosition(
     navElementRef: React.RefObject<HTMLElement | null>,
+    indicatorElementRef: React.RefObject<HTMLSpanElement | null>,
     currentId: string | null,
+    targetIds: readonly string[],
 ): TocIndicatorPosition | null {
-    const [position, setPosition] =
-        React.useState<TocIndicatorPosition | null>(null);
+    const [position, setPosition] = React.useState<TocIndicatorPosition | null>(
+        null,
+    );
     const animationFrame = useAnimationFrame();
     const hasCurrent = currentId !== null;
 
     const measurePosition = useStableCallback(() => {
-        const navElement = navElementRef.current;
-        if (navElement === null || currentId === null) {
+        const container = navElementRef.current;
+        if (container === null || currentId === null) {
             setPosition(null);
             return;
         }
 
-        const currentLink = navElement.querySelector<HTMLElement>(
+        const currentLink = container.querySelector<HTMLElement>(
             CURRENT_LINK_SELECTOR,
         );
         if (currentLink === null || currentLink.getClientRects().length === 0) {
@@ -1134,22 +1142,24 @@ function useTocIndicatorPosition(
 
         const listItem = currentLink.closest("li");
         const itemElement =
-            listItem !== null && navElement.contains(listItem)
+            listItem !== null && container.contains(listItem)
                 ? listItem
                 : currentLink;
-        const navRect = navElement.getBoundingClientRect();
+        const positioningElement =
+            indicatorElementRef.current?.offsetParent ?? container;
+        const positioningRect = positioningElement.getBoundingClientRect();
         const itemRect = itemElement.getBoundingClientRect();
         const nextPosition: TocIndicatorPosition = {
             top:
                 itemRect.top -
-                navRect.top -
-                navElement.clientTop +
-                navElement.scrollTop,
+                positioningRect.top -
+                positioningElement.clientTop +
+                positioningElement.scrollTop,
             left:
                 itemRect.left -
-                navRect.left -
-                navElement.clientLeft +
-                navElement.scrollLeft,
+                positioningRect.left -
+                positioningElement.clientLeft +
+                positioningElement.scrollLeft,
             width: itemRect.width,
             height: itemRect.height,
         };
@@ -1168,13 +1178,13 @@ function useTocIndicatorPosition(
     useIsoLayoutEffect(measurePosition);
 
     useIsoLayoutEffect(() => {
-        const navElement = navElementRef.current;
-        if (navElement === null || !hasCurrent) return;
+        const container = navElementRef.current;
+        if (container === null || !hasCurrent) return;
 
         const resizeObserver = new ResizeObserver(scheduleMeasurement);
-        resizeObserver.observe(navElement);
-        const resizeTargets = new Set<Element>(navElement.children);
-        for (const target of navElement.querySelectorAll(
+        resizeObserver.observe(container);
+        const resizeTargets = new Set<Element>(container.children);
+        for (const target of container.querySelectorAll(
             "li, a, [role='link']",
         )) {
             resizeTargets.add(target);
@@ -1184,7 +1194,7 @@ function useTocIndicatorPosition(
         }
 
         const detachScrollEvent = addEventListener(
-            navElement,
+            container,
             "scroll",
             scheduleMeasurement,
             { capture: true, passive: true },
@@ -1195,7 +1205,13 @@ function useTocIndicatorPosition(
             resizeObserver.disconnect();
             animationFrame.cancel();
         };
-    }, [animationFrame, hasCurrent, navElementRef, scheduleMeasurement]);
+    }, [
+        animationFrame,
+        hasCurrent,
+        navElementRef,
+        scheduleMeasurement,
+        targetIds,
+    ]);
 
     return position;
 }
