@@ -12,103 +12,10 @@ import { useStableCallback } from "@base-ui/utils/useStableCallback";
 
 const MIN_HEADING_LEVEL = 1;
 const MAX_HEADING_LEVEL = 6;
-
-const DEFAULT_DISCOVERY_LEVELS: readonly HeadingLevel[] = [2, 3, 4, 5, 6];
-
-const HEADINGS_SELECTOR = "h1, h2, h3, h4, h5, h6";
-
-const HEADING_LEVEL_BY_TAG_NAME: Readonly<
-    Record<string, HeadingLevel | undefined>
-> = {
-    H1: 1,
-    H2: 2,
-    H3: 3,
-    H4: 4,
-    H5: 5,
-    H6: 6,
-};
-
-const TITLE_EXCLUDED_TAG_NAMES: ReadonlySet<string> = new Set([
-    "script",
-    "style",
-]);
-
 const TITLE_WHITESPACE_RUN_PATTERN = /\s+/g;
-
 const ASCII_WHITESPACE_PATTERN = /[\u0009-\u000D\u0020]/;
-
 const UNPAIRED_SURROGATE_PATTERN =
     /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-const ARIA_CURRENT_LOCATION = "location";
-
-const CURRENT_LINK_SELECTOR = `[aria-current="${ARIA_CURRENT_LOCATION}"]`;
-
-const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
-
-const INVALID_COLLECTION_MESSAGE =
-    "Invalid target ID in targetIds: every entry must be a valid, unique target ID.";
-
-const INVALID_TARGET_COLLECTION_MESSAGE =
-    "Invalid targetIds: expected an array of target IDs.";
-
-const DUPLICATE_TARGET_MESSAGE_PREFIX = "Duplicate target ID: ";
-
-const INVALID_ACTIVATION_OFFSET_MESSAGE =
-    "Invalid activationOffset: it must be a finite, non-negative number.";
-
-const INVALID_TRACKING_SOURCE_MESSAGE =
-    "TocRoot receives one tracking source: targetIds or headings.";
-
-const INVALID_TARGET_ID_ON_LINK_MESSAGE =
-    "Invalid targetId on TocLink: it must be a valid target ID.";
-
-const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
-
-const INDICATOR_OUTSIDE_ROOT_MESSAGE =
-    "TocIndicator must render inside a TocRoot.";
-
-const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX =
-    "targetId is not in the root collection: ";
-
-const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
-
-const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
-    "TocList receives function children only when TocRoot owns headings; pass `headings` to TocRoot.";
-
-const INVALID_DISCOVERY_LEVEL_MESSAGE =
-    "Invalid levels option: values must be integers from 1 to 6.";
-
-const EMPTY_HEADING_TITLE_MESSAGE =
-    "Heading title is empty after whitespace cleaning.";
-
-const INVALID_HEADING_ID_MESSAGE_PREFIX =
-    "Invalid heading ID in groupHeadings input: ";
-
-const INVALID_HEADING_LEVEL_MESSAGE =
-    "Invalid heading level in groupHeadings input: it must be an integer from 1 to 6.";
-
-const INVALID_HEADING_TITLE_MESSAGE =
-    "Invalid heading title in groupHeadings input: it must be a string.";
-
-const INVALID_HEADINGS_COLLECTION_MESSAGE =
-    "Invalid headings: expected an array of heading records.";
-
-const INVALID_HEADING_RECORD_MESSAGE =
-    "Invalid heading: expected an object with id, title, and level fields.";
-
-const DUPLICATE_HEADING_ID_MESSAGE_PREFIX =
-    "Duplicate heading ID in groupHeadings input: ";
-
-const INVALID_SCROLL_ELEMENT_MESSAGE =
-    "Invalid scrollElement: pass a DOM Element, null, or undefined.";
-
-const SCROLL_ELEMENT_DOCUMENT_MESSAGE =
-    "Invalid scrollElement: it must belong to the same document as TocRoot.";
-
-const EMPTY_HEADINGS: readonly Heading[] = [];
-
-const warn = createLogOnce("warn", "base-ui-toc");
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -126,17 +33,83 @@ interface HeadingNodeDraft extends Heading {
     children: HeadingNodeDraft[];
 }
 
-export interface TocTargetPosition {
+interface TocTargetPosition {
     id: string;
     /** Distance in CSS pixels from the surface top to the target top; null when unavailable. */
     distanceFromSurfaceTopPx: number | null;
 }
 
-export interface TocScrollSnapshot {
+interface TocScrollSnapshot {
     targetPositions: readonly TocTargetPosition[];
     activationOffsetPx: number;
     hasSurfaceBottomReached: boolean;
 }
+
+const DEFAULT_DISCOVERY_LEVELS: readonly HeadingLevel[] = [2, 3, 4, 5, 6];
+const HEADINGS_SELECTOR = "h1, h2, h3, h4, h5, h6";
+const HEADING_LEVEL_BY_TAG_NAME: Readonly<
+    Record<string, HeadingLevel | undefined>
+> = {
+    H1: 1,
+    H2: 2,
+    H3: 3,
+    H4: 4,
+    H5: 5,
+    H6: 6,
+};
+
+const TITLE_EXCLUDED_TAG_NAMES: ReadonlySet<string> = new Set([
+    "script",
+    "style",
+]);
+const INVALID_DISCOVERY_LEVEL_MESSAGE =
+    "Invalid levels option: values must be integers from 1 to 6.";
+
+const ARIA_CURRENT_LOCATION = "location";
+const CURRENT_LINK_SELECTOR = `[aria-current="${ARIA_CURRENT_LOCATION}"]`;
+const BOTTOM_MAX_SCROLL_TOLERANCE_PX = 1;
+const EMPTY_HEADINGS: readonly Heading[] = [];
+const warn = createLogOnce("warn", "base-ui-toc");
+
+const OUT_OF_SCROLLER_TARGET_WARNING =
+    "Skipped a target that resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
+const INVALID_COLLECTION_MESSAGE =
+    "Invalid target ID in targetIds: every entry must be a valid, unique target ID.";
+const INVALID_TARGET_COLLECTION_MESSAGE =
+    "Invalid targetIds: expected an array of target IDs.";
+const DUPLICATE_TARGET_MESSAGE_PREFIX = "Duplicate target ID: ";
+const INVALID_HEADING_ID_MESSAGE_PREFIX =
+    "Invalid heading ID in groupHeadings input: ";
+const INVALID_HEADING_LEVEL_MESSAGE =
+    "Invalid heading level in groupHeadings input: it must be an integer from 1 to 6.";
+const INVALID_HEADING_TITLE_MESSAGE =
+    "Invalid heading title in groupHeadings input: it must be a string.";
+const EMPTY_HEADING_TITLE_MESSAGE =
+    "Heading title is empty after whitespace cleaning.";
+const INVALID_HEADINGS_COLLECTION_MESSAGE =
+    "Invalid headings: expected an array of heading records.";
+const INVALID_HEADING_RECORD_MESSAGE =
+    "Invalid heading: expected an object with id, title, and level fields.";
+const DUPLICATE_HEADING_ID_MESSAGE_PREFIX =
+    "Duplicate heading ID in groupHeadings input: ";
+const INVALID_TRACKING_SOURCE_MESSAGE =
+    "TocRoot receives one tracking source: targetIds or headings.";
+const INVALID_ACTIVATION_OFFSET_MESSAGE =
+    "Invalid activationOffset: it must be a finite, non-negative number.";
+const INVALID_TARGET_ID_ON_LINK_MESSAGE =
+    "Invalid targetId on TocLink: it must be a valid target ID.";
+const LINK_OUTSIDE_ROOT_MESSAGE = "TocLink must render inside a TocRoot.";
+const INDICATOR_OUTSIDE_ROOT_MESSAGE =
+    "TocIndicator must render inside a TocRoot.";
+const LINK_NOT_IN_COLLECTION_MESSAGE_PREFIX =
+    "targetId is not in the root collection: ";
+const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
+const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
+    "TocList receives function children only when TocRoot owns headings; pass `headings` to TocRoot.";
+const INVALID_SCROLL_ELEMENT_MESSAGE =
+    "Invalid scrollElement: pass a DOM Element, null, or undefined.";
+const SCROLL_ELEMENT_DOCUMENT_MESSAGE =
+    "Invalid scrollElement: it must belong to the same document as TocRoot.";
 
 export interface TocRootState {
     currentId: string | null;
@@ -167,7 +140,7 @@ interface TocRootContextValue {
 }
 
 /** A valid target ID is non-empty and holds no ASCII whitespace or unpaired surrogate. */
-export function isValidTargetId(candidate: unknown): candidate is string {
+function isValidTargetId(candidate: unknown): candidate is string {
     if (typeof candidate !== "string") return false;
     if (candidate === "") return false;
     if (ASCII_WHITESPACE_PATTERN.test(candidate)) return false;
@@ -194,9 +167,7 @@ export function parseTargetCollection(targetIds: unknown): readonly string[] {
 }
 
 /** An activation offset is a non-negative, finite CSS-pixel number. */
-export function isValidActivationOffset(
-    candidate: unknown,
-): candidate is number {
+function isValidActivationOffset(candidate: unknown): candidate is number {
     return (
         typeof candidate === "number" &&
         Number.isFinite(candidate) &&
@@ -204,15 +175,7 @@ export function isValidActivationOffset(
     );
 }
 
-function parseActivationOffset(candidate: unknown): number {
-    if (!isValidActivationOffset(candidate))
-        throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
-    return candidate;
-}
-
-export function selectCurrentTargetId(
-    snapshot: TocScrollSnapshot,
-): string | null {
+function selectCurrentTargetId(snapshot: TocScrollSnapshot): string | null {
     let lastCrossedId: string | null = null;
     let lastAvailableId: string | null = null;
     for (const position of snapshot.targetPositions) {
@@ -227,7 +190,7 @@ export function selectCurrentTargetId(
 }
 
 /** Trims and collapses whitespace runs; throws when the result is empty. */
-export function cleanHeadingTitle(title: string): string {
+function cleanHeadingTitle(title: string): string {
     const cleaned = normalizeHeadingTitle(title);
     if (cleaned === "") throw new Error(EMPTY_HEADING_TITLE_MESSAGE);
     return cleaned;
@@ -248,7 +211,7 @@ function isHeadingLevelValue(candidate: unknown): candidate is HeadingLevel {
 
 /**
  * Groups headings into a tree: an entry at level L collects the following
- * deeper entries until a level ≤ L appears; skipped levels nest under the
+ * deeper items until a level ≤ L appears; skipped levels nest under the
  * last shallower entry.
  */
 export function groupHeadings(
@@ -280,7 +243,7 @@ function parseHeadings(headings: unknown): readonly Heading[] {
     if (!isUnknownArray(headings))
         throw new Error(INVALID_HEADINGS_COLLECTION_MESSAGE);
 
-    // Validate the entries and return cleaned copies in input order, so the
+    // Validate the items and return cleaned copies in input order, so the
     // grouping never re-cleans or re-validates.
     const cleanedHeadings: Heading[] = [];
     const seenIds = new Set<string>();
@@ -331,9 +294,9 @@ type TocTrackingSource =
 /**
  * Tracking boundary: the two-lanes error precedes the absent-lane error, and
  * lane discrimination precedes per-lane parsing. The `headings` lane parses
- * the entries and derives its id collection from them.
+ * the items and derives its id collection from them.
  */
-export function parseTrackingSource(props: unknown): TocTrackingSource {
+function parseTrackingSource(props: unknown): TocTrackingSource {
     if (!isRecord(props)) throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
 
     const { targetIds, headings } = props;
@@ -348,12 +311,23 @@ export function parseTrackingSource(props: unknown): TocTrackingSource {
         const parsedHeadings = parseHeadings(headings);
         return {
             lane: "headings",
-            // The parsed entries validated every id, so this projection never re-runs the collection parser.
             targetIds: parsedHeadings.map((heading) => heading.id),
             headings: parsedHeadings,
         };
     }
     throw new Error(INVALID_TRACKING_SOURCE_MESSAGE);
+}
+
+function selectActiveValue(
+    headings: readonly Heading[] | null,
+    currentId: string | null,
+): string | null {
+    if (currentId === null) return null;
+    if (headings === null) return currentId;
+    for (const heading of headings) {
+        if (heading.id === currentId) return heading.title;
+    }
+    return currentId;
 }
 
 /**
@@ -501,6 +475,12 @@ export function useTocHeadings(scope: Element | null): readonly Heading[] {
     return headings;
 }
 
+function parseActivationOffset(candidate: unknown): number {
+    if (!isValidActivationOffset(candidate))
+        throw new Error(INVALID_ACTIVATION_OFFSET_MESSAGE);
+    return candidate;
+}
+
 function parseScrollElement(candidate: unknown): Element | null | undefined {
     if (candidate === null || candidate === undefined) return candidate;
     if (!isDomElement(candidate))
@@ -545,6 +525,17 @@ function hasReachedBottom(
     );
 }
 
+function isElementModeSurface(
+    scrollElement: Element | null | undefined,
+    docElement: HTMLElement,
+): scrollElement is Element {
+    return (
+        scrollElement !== undefined &&
+        scrollElement !== null &&
+        scrollElement !== docElement
+    );
+}
+
 function unavailablePosition(id: string): TocTargetPosition {
     return { id, distanceFromSurfaceTopPx: null };
 }
@@ -569,16 +560,7 @@ function readTocScrollSnapshot({
     let surfaceTopPx = 0;
     let hasSurfaceBottomReached = false;
 
-    if (scrollElement === undefined || scrollElement === docElement) {
-        const view = doc.defaultView;
-        if (view === null) return null;
-
-        hasSurfaceBottomReached = hasReachedBottom(
-            docElement.scrollHeight,
-            docElement.clientHeight,
-            view.scrollY,
-        );
-    } else {
+    if (isElementModeSurface(scrollElement, docElement)) {
         if (scrollElement.clientHeight <= 0) return null;
 
         surfaceElement = scrollElement;
@@ -589,6 +571,15 @@ function readTocScrollSnapshot({
             scrollElement.scrollHeight,
             scrollElement.clientHeight,
             scrollElement.scrollTop,
+        );
+    } else {
+        const view = doc.defaultView;
+        if (view === null) return null;
+
+        hasSurfaceBottomReached = hasReachedBottom(
+            docElement.scrollHeight,
+            docElement.clientHeight,
+            view.scrollY,
         );
     }
 
@@ -608,6 +599,9 @@ function readTocScrollSnapshot({
             (targetElement === surfaceElement ||
                 !surfaceElement.contains(targetElement))
         ) {
+            warn(
+                `${OUT_OF_SCROLLER_TARGET_WARNING} Skipped the target "${targetId}".`,
+            );
             targetPositions.push(unavailablePosition(targetId));
             continue;
         }
@@ -738,10 +732,7 @@ function useTocTracker(props: {
 
         // The root element tracks like an omitted `scrollElement`: root-scroller
         // events target the Document, and its bounding-rect top is the document origin.
-        if (
-            scrollElement === undefined ||
-            scrollElement === doc.documentElement
-        ) {
+        if (!isElementModeSurface(scrollElement, doc.documentElement)) {
             const view = doc.defaultView;
             // A document without a window cannot carry listeners; publish null instead of keeping a stale value.
             if (view === null) {
@@ -818,7 +809,7 @@ type TocCompositionProps<
 export interface TocRootProps extends TocCompositionProps<"nav", TocRootState> {
     /** The `targetIds` lane; mutually exclusive with `headings`. Immutable snapshot, replace it to reconfigure. */
     targetIds?: readonly string[] | undefined;
-    /** The `headings` lane, mutually exclusive with `targetIds`; the Root parses the entries and derives the collection from them. */
+    /** The `headings` lane, mutually exclusive with `targetIds`; the Root parses the items and derives the collection from them. */
     headings?: readonly Heading[] | undefined;
     /** The tracked scrolling surface; omit for the document viewport, pass `null` to deactivate tracking. */
     scrollElement?: Element | null | undefined;
@@ -920,6 +911,18 @@ export function TocTitle(componentProps: TocTitleProps) {
     );
 }
 
+function renderHeadingItems(
+    render: (entry: Heading) => React.ReactNode,
+    headings: readonly Heading[] | null,
+): React.ReactNode {
+    if (headings === null)
+        throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
+
+    return headings.map((entry) => (
+        <React.Fragment key={entry.id}>{render(entry)}</React.Fragment>
+    ));
+}
+
 export interface TocListProps extends TocCompositionProps<
     "ol",
     TocListState,
@@ -929,7 +932,7 @@ export interface TocListProps extends TocCompositionProps<
         React.ReactNode | ((entry: Heading) => React.ReactNode) | undefined;
 }
 
-/** A flat ordered list of heading entries. */
+/** A flat ordered list of heading items. */
 export function TocList(componentProps: TocListProps) {
     const {
         className,
@@ -943,7 +946,7 @@ export function TocList(componentProps: TocListProps) {
     const headings = React.useContext(TocRootContext)?.headings ?? null;
     const children =
         typeof childrenProp === "function"
-            ? renderHeadingEntries(childrenProp, headings)
+            ? renderHeadingItems(childrenProp, headings)
             : childrenProp;
 
     return useRenderElement<TocListState, HTMLOListElement, "ol">(
@@ -954,30 +957,6 @@ export function TocList(componentProps: TocListProps) {
             props: [elementProps, (props) => ({ ...props, children })],
         },
     );
-}
-
-function renderHeadingEntries(
-    renderEntry: (entry: Heading) => React.ReactNode,
-    headings: readonly Heading[] | null,
-): React.ReactNode {
-    if (headings === null)
-        throw new Error(INVALID_LIST_FUNCTION_CHILDREN_MESSAGE);
-
-    return headings.map((entry) => (
-        <React.Fragment key={entry.id}>{renderEntry(entry)}</React.Fragment>
-    ));
-}
-
-export function selectActiveValue(
-    headings: readonly Heading[] | null,
-    currentId: string | null,
-): string | null {
-    if (currentId === null) return null;
-    if (headings === null) return currentId;
-    for (const heading of headings) {
-        if (heading.id === currentId) return heading.title;
-    }
-    return currentId;
 }
 
 export interface TocItemProps extends TocCompositionProps<"li", TocItemState> {}
