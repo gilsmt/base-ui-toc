@@ -381,10 +381,7 @@ export function discoverHeadings(
         if (level === undefined) continue;
 
         const id = headingElement.getAttribute("id");
-        if (
-            isInHiddenSubtree(headingElement) ||
-            !selectedLevelSet.has(level)
-        ) {
+        if (isInHiddenSubtree(headingElement) || !selectedLevelSet.has(level)) {
             // Filtered headings can still own the ID returned by getElementById.
             if (isValidTargetId(id)) seenIds.add(id);
             continue;
@@ -551,6 +548,10 @@ function hasReachedBottom(
     );
 }
 
+function unavailablePosition(id: string): TocTargetPosition {
+    return { id, distanceFromSurfaceTopPx: null };
+}
+
 interface TocScrollSnapshotReadOptions {
     doc: Document;
     targetIds: readonly string[];
@@ -598,41 +599,36 @@ function readTocScrollSnapshot({
     for (const targetId of targetIds) {
         const targetElement = doc.getElementById(targetId);
         if (targetElement === null) {
-            targetPositions.push({
-                id: targetId,
-                distanceFromSurfaceTopPx: null,
-            });
+            targetPositions.push(unavailablePosition(targetId));
             continue;
         }
+
         // Ownership: a target outside its scroller cannot be measured
         // against it, so it stays unavailable; contains() is inclusive, so
         // the scroller itself is excluded.
-        if (surfaceElement !== null) {
-            const isTargetOwnedByScroller =
-                targetElement !== surfaceElement &&
-                surfaceElement.contains(targetElement);
-            if (!isTargetOwnedByScroller) {
-                warn(
-                    `${OWNERSHIP_WARNING_MESSAGE} Skipped the target "${targetId}".`,
-                );
-                targetPositions.push({
-                    id: targetId,
-                    distanceFromSurfaceTopPx: null,
-                });
-                continue;
-            }
-        }
-        if (targetElement.getClientRects().length === 0) {
-            targetPositions.push({
-                id: targetId,
-                distanceFromSurfaceTopPx: null,
-            });
+        if (
+            surfaceElement !== null &&
+            (targetElement === surfaceElement ||
+                !surfaceElement.contains(targetElement))
+        ) {
+            targetPositions.push(unavailablePosition(targetId));
             continue;
         }
+
+        const targetRect = targetElement.getBoundingClientRect();
+
+        if (
+            targetRect.width === 0 &&
+            targetRect.height === 0 &&
+            targetElement.getClientRects().length === 0
+        ) {
+            targetPositions.push(unavailablePosition(targetId));
+            continue;
+        }
+
         targetPositions.push({
             id: targetId,
-            distanceFromSurfaceTopPx:
-                targetElement.getBoundingClientRect().top - surfaceTopPx,
+            distanceFromSurfaceTopPx: targetRect.top - surfaceTopPx,
         });
     }
 
@@ -1177,13 +1173,10 @@ function useTocIndicatorPosition(
 
         const resizeObserver = new ResizeObserver(scheduleMeasurement);
         resizeObserver.observe(container);
-        const resizeTargets = new Set<Element>(container.children);
+
         for (const target of container.querySelectorAll(
-            "li, a, [role='link']",
+            ":scope > *, li, a, [role='link']",
         )) {
-            resizeTargets.add(target);
-        }
-        for (const target of resizeTargets) {
             resizeObserver.observe(target);
         }
 
