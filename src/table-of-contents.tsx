@@ -76,9 +76,6 @@ const VALUE_OUTSIDE_ROOT_MESSAGE = "TocValue must render inside a TocRoot.";
 const INVALID_LIST_FUNCTION_CHILDREN_MESSAGE =
     "TocList receives function children only when TocRoot owns headings; pass `headings` to TocRoot.";
 
-const OWNERSHIP_WARNING_MESSAGE =
-    "Skipped a target that resolves outside its configured scroller. Targets in element mode must be DOM descendants of the scroller.";
-
 const INVALID_DISCOVERY_LEVEL_MESSAGE =
     "Invalid levels option: values must be integers from 1 to 6.";
 
@@ -1010,10 +1007,11 @@ export interface TocLinkProps extends TocCompositionProps<
 
 /** A fragment link to one configured target; component-owned `href` and `aria-current` beat consumer values. */
 export function TocLink(componentProps: TocLinkProps) {
-    const context = React.useContext(TocRootContext);
-    const currentId = React.useContext(TocCurrentIdContext);
     const { targetId, className, style, render, ref, ...elementProps } =
         componentProps;
+
+    const context = React.useContext(TocRootContext);
+    const currentId = React.useContext(TocCurrentIdContext);
 
     if (!isValidTargetId(targetId))
         throw new Error(INVALID_TARGET_ID_ON_LINK_MESSAGE);
@@ -1059,10 +1057,10 @@ export interface TocIndicatorProps extends TocCompositionProps<
 
 /** A decorative marker that follows the current list item. */
 export function TocIndicator(componentProps: TocIndicatorProps) {
+    const { className, style, render, ref, ...elementProps } = componentProps;
+
     const context = React.useContext(TocRootContext);
     const currentId = React.useContext(TocCurrentIdContext);
-
-    const { className, style, render, ref, ...elementProps } = componentProps;
 
     if (context === undefined) throw new Error(INDICATOR_OUTSIDE_ROOT_MESSAGE);
 
